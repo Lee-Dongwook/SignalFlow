@@ -1,0 +1,18 @@
+{
+  "mappings": {
+    "properties": {
+      "event_id": { "type": "keyword" },
+      "source": { "type": "keyword" },
+      "category": { "type": "keyword" },
+      "title": { "type": "text", "analyzer": "standard" },
+      "content": { "type": "text", "analyzer": "standard" },
+      "text_embedding": {
+        "type": "dense_vector",
+        "dims": 384,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "created_at": { "type": "date" }
+    }
+  }
+}
