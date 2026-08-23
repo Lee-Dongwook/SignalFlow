@@ -9,103 +9,154 @@ ACID 레이크하우스 및 LLM RAG/Knowledge Graph 서빙 레이어를 통합�
 
 ```text
 root/
-├── README.md
-├── docker-compose.yml          # 전체 로컬 데이터 인프라 정의
-├── .env                        # 포트, 계정 정보, 환경 변수 통합 관리
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml             # GitHub Actions CI/CD Pipeline
 │
 ├── apps/                       # 애플리케이션 및 소스 코드
-│   ├── producer/               # Data Ingestion (더미/실제 프로듀서)
+│   ├── producer/               # Data Ingestion (OpenTelemetry Trace Context 주입)
 │   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── src/
 │   │       ├── main.py
 │   │       └── generators.py
 │   │
-│   ├── flink_jobs/             # Real-time Stream Processing
+│   ├── flink_jobs/             # Real-time Stream Processing & DQ Gate
 │   │   ├── Dockerfile
 │   │   ├── requirements.txt
-│   │   ├── src/
-│   │   │   ├── jobs/
-│   │   │   │   └── streaming_dedup.py
-│   │   │   └── utils/
-│   │   └── jars/               # Flink Connector Jars (Kafka, Iceberg 등)
+│   │   └── src/
+│   │       └── jobs/
+│   │           ├── dedup_and_quality_check.py
+│   │           ├── validator_dlq_pipeline.py  # Schema Validation & DLQ Side Output
+│   │           ├── flink_to_clickhouse.py     # ClickHouse JDBC Sink
+│   │           └── kafka_to_iceberg.py
 │   │
-│   └── quality_checker/        # Data Quality & Validation (Great Expectations/Soda)
-│       ├── requirements.txt
-│       └── checks/
+│   └── ai_indexer/             # Vector Indexer & Knowledge Graph Sink
+│       ├── Dockerfile
+│       └── indexer.py
+│
+├── schemas/
+│   └── raw_event.avsc          # Confluent Schema Registry (Avro Data Contract)
+│
+├── scripts/
+│   └── dlq_replay_job.py       # DLQ 격리 메시지 재처리(Replay) Worker
 │
 ├── infra/                      # 인프라 컴포넌트별 상세 설정 (Config & Scripts)
 │   ├── minio/
-│   │   └── init-buckets.sh     # Iceberg용 S3 버킷 자동 생성 스크립트
+│   │   └── init-buckets.sh
 │   ├── clickhouse/
-│   │   └── init.sql            # ClickHouse 데이터베이스/테이블 초기화
+│   │   └── init.sql            # Materialized View & SummingMergeTree DDL
 │   ├── elasticsearch/
-│   │   └── mappings.json       # ES 인덱스 맵핑
+│   │   └── mappings.json
+│   ├── neo4j/
+│   │   └── schema.cypher
 │   ├── prometheus/
-│   │   └── prometheus.yml      # Prometheus 스크랩 설정
+│   │   └── prometheus.yml
 │   └── grafana/
-│       └── provisioning/       # 대시보드 및 데이터소스 자동 설정
+│       └── provisioning/
 │
-└── orchestration/              # Batch & Pipeline Workflow (Airflow)
+├── k8s/                        # GitOps Kubernetes Manifests (ArgoCD)
+│   ├── application.yml
+│   ├── flink-jobmanager.yml
+│   └── flink-taskmanager.yml
+│
+└── orchestration/              # Batch & Pipeline Workflow (Airflow & dbt)
     ├── dags/
-    │   └── daily_iceberg_compaction.py
-    └── plugins/
+    │   ├── daily_iceberg_compaction.py # Small File Compaction & Expiry DAG
+    │   └── dbt_spark_batch_dag.py      # Star Schema 차원 모델링 DAG
+    ├── dbt/                    # dbt Spark-Iceberg 프로젝트
+    │   ├── dbt_project.yml
+    │   ├── profiles.yml
+    │   └── models/
+    │       ├── staging/
+    │       └── marts/
+    └── spark_jobs/
+        └── iceberg_compaction.py
 ```
 
 ### 기술 스택
 
-- 1. Ingestion & Bus
-  - **Kafka** : 초당 수천 ~ 수만 건의 비정형 이벤트 흡수 및 Loose Coupling 디커플링 구조 확보
+1.  Ingestion & Bus
 
-- 2. Stream Processing
-  - **Flink, PyFlink** : Event-Time 기반 Out-of-order 데이터 처리, Window Deduplication, State TTL 관리
+- **Kafka** : 초당 수천 ~ 수만 건의 비정형 이벤트 흡수 및 Loose Coupling 디커플링 구조 확보
+- **Confluent Schema Registry(Avro)**: Upstream 스키마 변경 감지 및 데이터 계약 (Data Contract) 강제
 
-- 3. Data Lakehouse
-  - **Apache Iceberg, MinIO** : S3 API 기반 ACID 트랜잭선, Time Travel (시점 복구), Schema Evolution 보장
+2.  Stream Processing
 
-- 4. Serving & AI Layer
-  - **ClickHouse, Elasticsearch, Neo4j** : OLAP 집계, Dense Vector 기반 Hybrid Search(RAG), Knowledge Graph
+- **Flink, PyFlink** : Event-Time 기반 Deduplication, State TTL 관리, Side Output 기반 Dead Letter Queue(DLQ) 라우팅
 
-- 5. Data Quality & Obs.
-  - **Prometheus, Grafana** : In-flight Drop Ratio, Processing Lag, Operator Throughput 실시간 관측성 확보
+3.  Data Lakehouse & Batch Modeling
+
+- **Apache Iceberg, MinIO** : S3 API 기반 ACID 트랜잭선, Time Travel (시점 복구), Schema Evolution 보장
+- **Spark & dbt** : Small File Compaction 자동화 및 Star Schema 기반 차원 모델링(Dimension & Fact Table)
+
+4.  Serving & AI Layer
+
+- **ClickHouse** : Materialized View 및 SummingMergeTree 기반 실시간 OLAP 집계 서빙
+- **Elasticsearch, Neo4j** : Dense Vector 기반 Hybrid Search(RAG) 및 Entity Knowledge Graph 구축
+
+5.  Data Quality & Observability & GitOps
+
+- **Prometheus, Grafana** : In-flight Drop Ratio, Processing Lag, Operator Throughput 실시간 관측
+- **OpenTelemetry & jaeger** : Producer - Flink - DB 전 구간 W3C Context 주입 기반 Distributed Tracing.
+- **Github Actions & ArgoCD** : K8s Manifest 연동 기반 무중단 GitOps CI/CD 배포 자동화
 
 ### 파이프라인 아키텍처
 
 ```text
 [ Data Ingestion Layer ]
-  - Web Scraper / News API / RSS Event Streams
+  - Scraper / News API / RSS Streams (OTel Trace Context Injected)
         │
         ▼
   [ Apache Kafka ] ─── (Topic: raw-intelligence-stream)
         │
-        ├───▶ [ Prometheus Exporter ] ──▶ [ Grafana Dashboard ] (Throughput, Lag, Drop Ratio)
+        ├───▶ [ Schema Registry ] (Avro Data Contract Validation)
         │
 [ Stream Processing & DQ Layer ]
   - [ Apache Flink (PyFlink) ]
       ├── State TTL (1h) & Event-Time Windowing (Deduplication)
-      └── In-flight Data Quality Gate (Validation & Drop filtering)
+      ├── In-flight Data Quality Gate (Validation)
+      └── Side Output ──▶ [ Kafka DLQ Topic ] ──▶ [ Replay Worker ]
         │
-        ├───────────────────────┬───────────────────────┐
-        ▼                       ▼                       ▼
-[ Storage & Serving Layer ]
-┌─────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
-│ Apache Iceberg (MinIO)  │  │ ClickHouse             │  │ Elasticsearch & Neo4j  │
-│ - Time Travel & Audit   │  │ - Real-time OLAP Metrics│ │ - Vector Hybrid Search │
-│ - Parquet Data Lakehouse│  │ - Low-Latency Aggs     │  │ - Entity Knowledge Graph│
-└─────────────────────────┘  └────────────────────────┘  └────────────────────────┘
+        ├───────────────────────┬───────────────────────┬───────────────────────┐
+        ▼                       ▼                       ▼                       ▼
+[ Storage, Serving & AI Layer ]
+┌─────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
+│ Apache Iceberg (MinIO)  │  │ ClickHouse             │  │ Elasticsearch & Neo4j  │  │ OpenTelemetry / Jaeger │
+│ - Time Travel & Audit   │  │ - Materialized View    │  │ - Vector Hybrid Search │  │ - E2E Distributed      │
+│ - dbt Batch Star Schema │  │ - Low-Latency Aggs     │  │ - Entity Knowledge Graph│ │   Tracing Observability│
+└─────────────────────────┘  └────────────────────────┘  └────────────────────────┘  └────────────────────────┘
 ```
 
 ### 실행 단계
 
-#### 1. 컨테이너 실행
+#### 1. 인프라 컨테이너 구동
 
-- `docker compose up -d`
+`docker compose up -d`
 
-#### 2. Kafka 토픽 실행
+#### 2. Kafka 토픽 및 DLQ 토픽 생성
 
-- `docker exec -it <kafka-container-id> kafka-topics --create --topic raw-intelligence-stream --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1`
+```
+docker exec -it kafka kafka-topics --create --topic raw-intelligence-stream --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
 
-#### 3. Flink 대시보드 접속
+docker exec -it kafka kafka-topics --create --topic dlq-intelligence-stream --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+```
+
+#### 3. ArgoCD GitOps 배포 적용
+
+```
+kubectl apply -f k8s/application.yml
+```
+
+#### 4. 대시보드 및 모니터링 접속
+
+- Flink UI: http://localhost:8081
+
+- Grafana: http://localhost:3000
+
+- Jaeger UI (Tracing): http://localhost:16686
+
+- ArgoCD UI: http://localhost:8080
 
 ---
 
@@ -122,13 +173,31 @@ root/
 
 - **결과** : 중복 수신율 절감, Flink TaskManager 메모리 사용량 안정화 (특정 Peak 구간 대비 State Memory 65% 절감)
 
-#### 2. In-flight Data Quality 검증 및 장애 복구(Time Travel) 체계 미비
+#### 2. Upstream 임의 스키마 변경 대응 및 내결함성(DLQ) 확보
 
-- **문제** : Upstream API의 임의 스키마 변경 및 Null ID 유입으로 파이프라인 하위 게층 전체 멈춤 및 검색 인덱스 훼손 현상 발생.
+- **문제** : Upstream API의 임의 스키마 변경 및 Null 유입 발생 시 Flink 파이프라인 전체가 멈추거나 (Crash Loop), Downstream DB로 비정상 데이터가 적재되는 현상 발생.
 
 - **해결** :
-  - Flink 내부에 Data Quality Gate를 배치하여 필수 키 결측치, 미래 시점 Timestamp 등 비정상 데이터를 파이프라인 상위 계층에서 즉시 Drop 처리.
-  - 데이터 레이크하우스로 Apache Iceberg를 도입하여 롤백이 필요한 경우 Time Travel Snapshot Rollback을 실행할 수 있는 백업/복구 절차 매뉴얼화.
-  - Drop 비율 및 Consumer Lag 지표를 Prometheus 커스텀 메트릭으로 노출하고 Grafana 대시보드 자동 프로비저닝 구축.
+  - Schema Registry(Avro) 기반 데이터 계약을 체결하고, Flink 내부에 ProcessFunction + Side Output 패턴을 구현해 결함 데이터를 Kafka DLQ Topic으로 실시간 분기 처리.
+  - 에러 메타데이터가 포함된 DLQ 메시지를 복구하여 메인 토픽으로 다시 보낼 수 있는 DLQ Replay Worker 파이프라인 세팅.
 
-- **결과** : Data Quality 오류로 인한 Downstream 장애 건수 감소, P99 Pipeline Processing Latency 300ms 이내 보장.
+- **결과** : 파이프라인 다운타임 0건 유지, 데이터 손실 없는 내결함성(Fault-tolerance) 체계 구축.
+
+#### 3. Iceberg 레이크하우스 Small File Problem 및 Read Latency 저하
+
+- **문제** : 초 단위로 실시간 무중단 적재되는 Flink Iceberg Sink 특성상 수 KB 크기의 Small Parquet 파일이 기하급수적으로 증가하여 배치 분석 및 쿼리 속도 심각하게 저하.
+
+- **해결** :
+  - Airflow 기반 PySpark Compaction DAG를 구축하여 매일 새벽 소형 파일들을 128MB 표준 Parquet 파일로 병합(rewrite_data_files).
+  - 24시간이 지난 구 스냅샷 및 Orphan Files을 자동 정제(expire_snapshots)하는 리텐션 주기 적용.
+
+- **결과** : 파일 수 90% 이상 감소 및 Iceberg 레이크하우스 쿼리 Read Latency 대폭 단축.
+
+#### 4. 실시간 집계 쿼리 병목 해소 및 서빙 속도 개선
+
+- **문제** : 대시보드 API 요청 시마다 Raw 테이블 전체 대상 GROUP BY 실시간 집계 쿼리가 실행되어 서빙 지연 시간 증가.
+
+- **해결** :
+  - ClickHouse의 Materialized View와 SummingMergeTree 엔진을 조합하여, 쓰기 시점에 1분 단위 집계를 미리 연산하도록 서빙 레이어 구조 변경.
+
+- **결과** : API 조회 쿼리 Latency를 500ms 이상에서 10ms 미만으로 극적 단축.
