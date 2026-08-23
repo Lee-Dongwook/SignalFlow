@@ -1,54 +1,33 @@
 import json
-import random
 import time
-import uuid
-from datetime import datetime
 from kafka import KafkaProducer
-from faker import Faker
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-fake = Faker()
+provider = TracerProvider()
+processor = BatchSpanProcessor(JaegerExporter(collector_endpoint='http://jaeger:14268/api/traces'))
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer("kafka-producer")
 
 producer = KafkaProducer(
     bootstrap_servers=['localhost:9092'],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-    acks='all'
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-TOPIC_NAME = 'raw-intelligence-stream'
-CATEGORIES = ['TECH', 'FINANCE', 'AI', 'MARKET']
-SOURCES = ['news_api', 'rss_feed', 'web_scraper']
+def send_event_with_trace(event_data):
+    with tracer.start_as_current_span("produce_kafka_event") as span:
+        headers = []
+        TraceContextTextMapPropagator().inject(carrier=headers, setter=lambda c,k,v: c.append((k, v.encode('utf-8'))))
 
-def generate_event():
-    return {
-        "event_id": str(uuid.uuid4()),
-        "source": random.choice(SOURCES),
-        "category": random.choice(CATEGORIES),
-        "title": fake.sentence(nb_words=6),
-        "content": fake.text(max_nb_chars=200),
-        "created_at": datetime.utcnow().isoformat() + "Z"  # pyright: ignore[reportDeprecated]
-    }
-
-def main():
-    print(f"Starting producer on topic: {TOPIC_NAME}")
-    cache_event = None
-
-    while True:
-        try:
-            if cache_event and random.random() < 0.1:
-                event = cache_event
-                print(f"Duplicate event_id: {event['event_id']}")
-            else:
-                event = generate_event()
-                cache_event = event
-            
-            producer.send(TOPIC_NAME, value=event)
-            print(f"Sent {event['category']} | {event['event_id']}")
-            time.sleep(0.5)
-        except KeyboardInterrupt:
-            break
-    
-    producer.flush()
-
+        span.set_attribute("event.id", event_data["event_id"])
+        producer.send('raw-intelligence-stream', value=event_data, headers=headers)
+        print(f"Sent with trace {event_data['event_id']} | Trace ID: {hex(span.get_span_context().trace_id)}")
 
 if __name__ == '__main__':
-    main()
+    event = {"event_id": "evt-1001", "source": "news", "category": "AI", "title": "OTel Integration"}
+    send_event_with_trace(event)
+    producer.flush()
