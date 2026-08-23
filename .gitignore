@@ -1,0 +1,68 @@
+# ==========================================
+# Environment & Secrets (보안 필수)
+# ==========================================
+.env
+*.env
+*.pem
+*.key
+secrets/
+
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# ==========================================
+# Java / Scala (Flink & Spark)
+# ==========================================
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+build/
+target/
+
+# ==========================================
+# Infrastructure & Local Storage Data
+# ==========================================
+# Docker / MinIO / ClickHouse / ES 등 데이터 저장소 덤프 파일
+*.log
+*.sqlite3
+data/
+storage/
+minio-data/
+clickhouse-data/
+es-data/
+
+# ==========================================
+# Data Quality & Notebooks
+# ==========================================
+.ipynb_checkpoints/
+ge_store/
+great_expectations/uncommitted/
+
+# ==========================================
+# IDE & Editors
+# ==========================================
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
