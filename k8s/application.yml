@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: flink-data-pipeline
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "https://github.com/Lee-Dongwook/SignalFlow.git"
+    targetRevision: HEAD
+    path: k8s
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: flink
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
