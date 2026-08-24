@@ -1,18 +1,27 @@
 import asyncio
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-app = FastAPI(title="SignalFlow Backend Control API")
+app = FastAPI(title="SignalFlow Backend Control API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class HealRequest(BaseModel):
+    event_id: str
+    target_agent: str = "SupervisorAgent"
+
+@app.get("/health")
+async def health_check():
+    return {"status": "HEALTHY", "service": "backend_api"}
 
 @app.get("/api/v1/stream/metrics")
 async def stream_metrics():
@@ -34,11 +43,13 @@ async def stream_metrics():
 
 
 @app.post("/api/v1/agents/heal")
-async def trigger_agent_self_healing(payload: dict):
-    event_id = payload.get("event_id")
+async def trigger_agent_self_healing(payload: HealRequest):
+    if not payload.event_id:
+        raise HTTPException(status_code=400, detail="event_id is required")
+
     return {
         "status": "SUCCESS",
-        "event_id": event_id,
+        "event_id": payload.event_id,
         "assigned_agent": "SchemaAgent",
-        "message": f"Self-healing workflow executed for {event_id}"
+        "message": f"Self-healing workflow executed for {payload.event_id}"
     }
