@@ -1,7 +1,8 @@
 import pytest
 import psycopg_pool
+from psycopg.types.json import Jsonb
 
-DATABASE_URL = "postgresql://test_user:test_password@localhost:5432/signalflow_test"
+DATABASE_URL = "postgresql://test_user:test_password@localhost:5433/signalflow_test"
 
 def test_postgres_checkpoint_persistence():
     with psycopg_pool.ConnectionPool(DATABASE_URL) as pool:
@@ -14,14 +15,20 @@ def test_postgres_checkpoint_persistence():
             """)
 
             conn.execute(
-                "INSERT INTO checkpoints (thread_id, state) VALUES (%s, %s) ON CONFLICT (thread_id) DO UPDATE SET state = EXCLUDED.state;",
-                ("thread-agent-99", '{"step": 3, "status": "PENDING_HEALING"}')
+                "INSERT INTO checkpoints (thread_id, state) VALUES (%s, %s) "
+                "ON CONFLICT (thread_id) DO UPDATE SET state = EXCLUDED.state;",
+                ("thread-agent-99", Jsonb({"step": 3, "status": "PENDING_HEALING"}))
             )
+            conn.commit()
 
         with pool.connection() as new_conn:
-            cursor = new_conn.execute("SELECT state FROM checkpoints WHERE thread_id = %s;", ("thread-agent-99",))
+            cursor = new_conn.execute(
+                "SELECT state FROM checkpoints WHERE thread_id = %s;", 
+                ("thread-agent-99",)
+            )
             row = cursor.fetchone()
 
             assert row is not None
-            assert row[0]["step"] == 3
-            assert row[0]["status"] == "PENDING_HEALING"
+            state_data = row[0]
+            assert state_data["step"] == 3
+            assert state_data["status"] == "PENDING_HEALING"
