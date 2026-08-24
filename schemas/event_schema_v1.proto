@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package signalflow.events;
+
+enum EventCategory {
+  UNKNOWN = 0;
+  SCHEMA_MISMATCH = 1;
+  MISSING_FIELD = 2;
+  NULL_VALUE = 3;
+  SYSTEM_LATENCY = 4;
+}
+
+message IntelligenceEvent {
+  string event_id = 1;
+  string source = 2;
+  EventCategory category = 3;
+  string payload = 4;
+  int64 timestamp = 5;
+  string trace_id = 6;
+  string span_id = 7;
+
+  reserved 8 to 15;
+
+  map<string, string> metadata = 16;
+}
