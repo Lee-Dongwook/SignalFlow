@@ -1,0 +1,20 @@
+apiVersion: v2
+name: signalflow-platform
+description: Helm Umbrella Chart for SignalFlow Stream Intelligence & Multi-Agent Architecture
+type: application
+version: 1.0.0
+appVersion: "2026.1"
+
+dependencies:
+  - name: dashboard
+    version: 0.1.0
+    repository: "file://./charts/dashboard"
+  - name: backend-api
+    version: 0.1.0
+    repository: "file://./charts/backend-api"
+  - name: dlq-healing-agent
+    version: 0.1.0
+    repository: "file://./charts/dlq-healing-agent"
+  - name: flink-jobs
+    version: 0.1.0
+    repository: "file://./charts/flink-jobs"
