@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: jobmanager
-          image: ghcr.io/Lee-DongWook/SignalFlow/flink-jobs:latest
+          image: ghcr.io/lee-dongwook/signalflow/flink-jobs:latest
           args: ["jobmanager"]
           ports:
             - containerPort: 8081
