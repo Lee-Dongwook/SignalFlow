@@ -1,46 +1,39 @@
+import os
 import json
 from kafka import KafkaConsumer, KafkaProducer
-from src.graph import build_dlq_healing_graph
+from checkpoint import get_langgraph_checkpointer
+from circuit_breaker import ResilientSupervisorAgent
 
 def run_dlq_self_healing_worker():
     consumer = KafkaConsumer(
         'dlq-intelligence-stream',
-        bootstrap_servers=["kafka:29092"],
+        bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
+        group_id='dlq_healing_agent_group',
         auto_offset_reset='earliset',
-        value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+        value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+        enable_auto_commit=False
     )
 
     producer = KafkaProducer(
-        bootstrap_servers=['kafka:29092'],
+        bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
 
-    app = build_dlq_healing_graph()
-    print("Multi Agent DLQ Self-Healing Worker Started")
+    checkpointer = get_langgraph_checkpointer()
+    agent_runner = ResilientSupervisorAgent(checkpointer)
 
     for message in consumer:
-        dlq_event = message.value
-        raw_payload = json.loads(dlq_event.get("raw_data", "{}"))
-        error_msg = dlq_event.get("error_message", "Unknown Error")
+        try:
+            event_data = json.loads(message.value.decode("utf-8"))
+            thread_config = {"configurable": {"thread_id": event_data["event_id"]}}
+            healed_result = agent_runner.invoke_agent_with_retry(event_data, config=thread_config)
 
-        initial_state = {
-            "raw_payload": raw_payload,
-            "error_message": error_msg,
-            "next_agent": "",
-            "corrected_payload": None,
-            "is_repaired": False,
-            "retry_count": 0,
-            "logs": []
-        }
-
-        result_state = app.invoke(initial_state)
-
-        if result_state["is_repaired"] and result_state["corrected_payload"]:
-            producer.send('raw-intelligence-stream', value=result_state["corrected_payload"])
-            producer.flush()
-            print(f"Success Self-Healed & Replayed: {result_state['corrected_payload'].get('event_id')}")
-        else:
-            print(f"Manual Intervention Required: {error_msg}")
+            producer.send("raw-telemetry-stream", value=healed_result["healed_payload"])
+            consumer.commit()
+            print(f"Repaired & Reinjected Event ID: {event_data["event_id"]}")
+        
+        except Exception as err:
+            print(f"Fallback DLQ Routing to Secondary Offline Storage due to : {err}")
 
 if __name__ == "__main__":
     run_dlq_self_healing_worker()
