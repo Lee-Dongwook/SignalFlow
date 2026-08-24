@@ -28,3 +28,29 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+  neo4j:
+    image: neo4j:5.11-community
+    environment:
+      - NEO4J_AUTH=neo4j/test_password
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus:/etc/prometheus

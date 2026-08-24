@@ -39,8 +39,8 @@ services:
     entrypoint: >
       /bin/sh -c "
       until (/usr/bin/mc config host add myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}) do echo '...waiting for MinIO...' && sleep 1; done;
-      /usr/bin/mc mb myminio/warehouse --ignore-exisiting;
-      /usr/bin/mc anonymus set public myminio/warehouse;
+      /usr/bin/mc mb myminio/warehouse --ignore-existing;
+      /usr/bin/mc anonymous set public myminio/warehouse;
       exit 0;
       "
 
@@ -65,7 +65,7 @@ services:
   taskmanager:
     build:
       context: ./apps/flink_jobs
-      dockefile: Dockerfile
+      dockerfile: Dockerfile
     container_name: flink-taskmanager
     depends_on:
       - jobmanager
@@ -97,7 +97,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xms512m"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
 
   neo4j:
     image: neo4j:5.12.0
