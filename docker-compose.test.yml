@@ -12,6 +12,7 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
   postgres:
@@ -52,3 +53,25 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/prometheus:/etc/prometheus
+
+  vllm-embedding:
+    image: vllm/vllm-openai:latest
+    container_name: signalflow-vllm-embed
+    ports:
+      - "8000:8000"
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    command: >
+      --model BAAI/bge-m3
+      --port 8000
+      --max-model-len 8192
