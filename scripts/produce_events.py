@@ -1,6 +1,15 @@
 import time
 import uuid
 import random
+import sys
+import base64
+from pathlib import Path
+
+# 이 파일을 직접 실행해도 프로젝트 루트의 schemas 패키지를 찾도록 한다.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from confluent_kafka import Producer
 
 from schemas.event_schema_v1_pb2 import IntelligenceEvent, EventCategory
@@ -60,7 +69,9 @@ def run_producer(events_per_second: int = 2):
     try:
         while True:
             event = generate_protobuf_event()
-            serialized_payload = event.SerializeToString()
+            # Flink 1.18의 기본 문자열 Kafka 스키마와 호환되도록 Protobuf 바이트를
+            # Base64 텍스트로 전달한다.
+            serialized_payload = base64.b64encode(event.SerializeToString())
             producer.produce(
                 topic=TOPIC_NAME,
                 key=event.event_id.encode("utf-8"),

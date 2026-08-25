@@ -6,17 +6,17 @@ DLQ_TAG = OutputTag("dlq_events")
 class DataQualityEvaluator(ProcessFunction):
     def process_element(self, value: IntelligenceEvent, ctx: ProcessFunction.Context):
         if value.category == EventCategory.SCHEMA_MISMATCH:
-            ctx.output(DLQ_TAG, self._build_dlq_record(value, "Schema Mismatch or Corrupted Payload"))
+            yield DLQ_TAG, self._build_dlq_record(value, "Schema Mismatch or Corrupted Payload")
             return
         
         if not value.payload or value.payload.isspace():
             value.category = EventCategory.NULL_VALUE
-            ctx.output(DLQ_TAG, self._build_dlq_record(value, "Payload is Empty or Null"))
+            yield DLQ_TAG, self._build_dlq_record(value, "Payload is Empty or Null")
             return
         
         if len(value.payload.strip()) < 5:
             value.category = EventCategory.MISSING_FIELD
-            ctx.output(DLQ_TAG, self._build_dlq_record(value, "Payload Length Below Threshold (<5)"))
+            yield DLQ_TAG, self._build_dlq_record(value, "Payload Length Below Threshold (<5)")
             return
         
         yield value

@@ -1,13 +1,17 @@
-from pyflink.common.serialization import DeserializationSchema
-from pyflink.common.typeinfo import Types
+import base64
+
+from pyflink.datastream.functions import MapFunction
 from schemas.event_schema_v1_pb2 import IntelligenceEvent, EventCategory
 
-class IntelligenceEventDeserializer(DeserializationSchema):
-    def deserialize(self, message: bytes) -> IntelligenceEvent:
+
+class ProtobufEventParser(MapFunction):
+    """Kafka의 원시 바이트 메시지를 Protobuf 이벤트로 변환한다."""
+
+    def map(self, message: str) -> IntelligenceEvent:
         event = IntelligenceEvent()
 
         try:
-            event.ParseFromString(message)
+            event.ParseFromString(base64.b64decode(message))
             return event
         except Exception:
             fallback_event = IntelligenceEvent(
@@ -17,6 +21,3 @@ class IntelligenceEventDeserializer(DeserializationSchema):
                 payload="",
             )
             return fallback_event
-
-    def get_produced_type(self):
-        return Types.PICKLED_BYTE_ARRAY()

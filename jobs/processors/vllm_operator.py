@@ -6,7 +6,9 @@ from schemas.event_schema_v1_pb2 import IntelligenceEvent
 
 class VLLMEmbeddingOperator(MapFunction):
     def __init__(self, vllm_url: str = None, model_name: str = "BAAI/bge-m3"):
-        self.vllm_url = vllm_url or os.getenv("VLLM_URL", "http://host.k3d.internal:8000")
+        # 로컬 docker-compose.test.yml의 vLLM 포트와 맞춘 기본값이다.
+        # 다른 환경에서는 VLLM_URL 환경 변수로 덮어쓸 수 있다.
+        self.vllm_url = vllm_url or os.getenv("VLLM_URL", "http://localhost:8000")
         self.endpoint = f"{self.vllm_url}/v1/embeddings"
         self.model_name = model_name
         self.client = None

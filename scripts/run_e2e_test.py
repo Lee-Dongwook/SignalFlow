@@ -27,6 +27,9 @@ def verify_clickhouse_data():
     import clickhouse_connect
 
     try:
+        client = clickhouse_connect.get_client(host="localhost", port=8123)
+        client.command("CREATE DATABASE IF NOT EXISTS signalflow_test")
+
         client = clickhouse_connect.get_client(host="localhost", port=8123, database="signalflow_test")
         result = client.query("SELECT count(), length(embedding) FROM intelligence_vectors GROUP BY length(embedding)")
         print(f"[ClickHouse Result] 적재 건수 / 임베딩 차원: {result.result_rows}")
