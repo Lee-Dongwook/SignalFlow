@@ -1,7 +1,13 @@
 import pytest
 import json
 import time
+import os
 from confluent_kafka import Producer, Consumer, KafkaError
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="Kafka integration test: run with RUN_INTEGRATION_TESTS=1 and test infrastructure running",
+)
 
 KAFKA_SERVER = "localhost:9092"
 MAIN_TOPIC = "signalflow.events.raw"

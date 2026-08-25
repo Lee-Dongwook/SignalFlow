@@ -1,8 +1,14 @@
 import pytest
+import os
 import clickhouse_connect
 from elasticsearch import Elasticsearch
 from neo4j import GraphDatabase
 from tenacity import retry, stop_after_attempt, wait_fixed
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="Infrastructure integration test: run with RUN_INTEGRATION_TESTS=1 and test infrastructure running",
+)
 
 CLICKHOUSE_PORT = 8123
 ELASTICSEARCH_PORT = 9200

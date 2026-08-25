@@ -1,6 +1,12 @@
 import pytest
+import os
 import psycopg_pool
 from psycopg.types.json import Jsonb
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="PostgreSQL integration test: run with RUN_INTEGRATION_TESTS=1 and test infrastructure running",
+)
 
 DATABASE_URL = "postgresql://test_user:test_password@localhost:5433/signalflow_test"
 

@@ -1,5 +1,11 @@
 import pytest
+import os
 from kubernetes import client, config
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="Kubernetes integration test: run with RUN_INTEGRATION_TESTS=1 and a configured cluster",
+)
 
 @pytest.fixture(scope="module")
 def k8s_client():

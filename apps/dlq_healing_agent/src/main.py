@@ -9,7 +9,7 @@ def run_dlq_self_healing_worker():
         'dlq-intelligence-stream',
         bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
         group_id='dlq_healing_agent_group',
-        auto_offset_reset='earliset',
+        auto_offset_reset='earliest',
         value_deserializer=lambda m: json.loads(m.decode('utf-8')),
         enable_auto_commit=False
     )
@@ -24,13 +24,14 @@ def run_dlq_self_healing_worker():
 
     for message in consumer:
         try:
-            event_data = json.loads(message.value.decode("utf-8"))
+            # value_deserializer가 이미 JSON 바이트를 dict로 변환한다.
+            event_data = message.value
             thread_config = {"configurable": {"thread_id": event_data["event_id"]}}
             healed_result = agent_runner.invoke_agent_with_retry(event_data, config=thread_config)
 
             producer.send("raw-telemetry-stream", value=healed_result["healed_payload"])
             consumer.commit()
-            print(f"Repaired & Reinjected Event ID: {event_data["event_id"]}")
+            print(f"Repaired & Reinjected Event ID: {event_data['event_id']}")
         
         except Exception as err:
             print(f"Fallback DLQ Routing to Secondary Offline Storage due to : {err}")
