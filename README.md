@@ -186,8 +186,37 @@ python scripts/run_e2e_test.py
 | MinIO Console    | `http://localhost:${MINIO_CONSOLE_PORT}` |
 | Neo4j Browser    | `http://localhost:7474`                  |
 
-## 문서와 다음 단계
+### DLQ 복구 지표 수집
 
-- 인프라 구성에서 겪은 문제와 해결 과정은 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)에서 확인할 수 있습니다.
-- Kubernetes/Argo CD 적용 전에는 현재 매니페스트 경로(`k8s/argocd`, `k8s/manifests`)와 컨테이너 이미지 태그를 검토하세요.
-- 운영 환경에서는 기본 자격 증명과 넓은 CORS 설정을 환경별 설정으로 교체하고, 대시보드를 실제 SSE/API 데이터에 연결하는 것을 권장합니다.
+- `apps/dlq_healing_agent/src/metrics.py`에 DLQ 복구 시도 횟수, 복구 처리 시간, 서킷 브레이커 상태를 위한 Prometheus 메트릭을 추가했습니다.
+- `apps/dlq_healing_agent/src/worker.py`의 `SchemaAgentWorker`가 복구 처리 과정에서 위 메트릭을 기록합니다.
+- Prometheus 설정에 `dlq-healing-agent` 스크레이프 대상(`host.docker.internal:8002`)을 추가했습니다.
+
+메트릭 서버만 별도로 실행하려면 다음 명령을 사용합니다.
+
+```bash
+python apps/dlq_healing_agent/src/worker.py
+```
+
+실행 후 `http://localhost:8002/metrics`에서 Prometheus 형식의 지표를 확인할 수 있습니다. Docker 환경과 운영체제에 따라 `host.docker.internal` 주소가 해석되지 않을 수 있으므로, 해당 경우 Prometheus의 스크레이프 대상을 실행 환경에 맞게 조정해야 합니다.
+
+### 대시보드 실시간 연결
+
+- 대시보드가 `/api/v1/stream/metrics` SSE 스트림을 구독해 TPS, DLQ 건수, 서킷 브레이커 상태를 표시하도록 확장했습니다.
+- `evt-9012`를 대상으로 `SchemaAgent` 복구를 요청하는 수동 복구 버튼을 추가했습니다.
+- API 기본 주소는 `NEXT_PUBLIC_API_URL` 환경 변수로 변경할 수 있으며, 지정하지 않으면 `http://localhost:8001`을 사용합니다.
+
+현재 Backend API가 보내는 SSE 예제에는 `tps`만 포함되어 있습니다. `dlq_count`, `circuit_breaker_open`은 실제 메트릭 수집 로직과 연결할 때 표시됩니다.
+
+### 검색 평가와 부하 확인
+
+- `apps/retrieval/evaluator.py`에 vLLM 호환 Chat Completions API로 검색 문맥 관련도를 0~1 범위로 평가하는 `LLMJudgeEvaluator`를 추가했습니다.
+- `scripts/evaluate_search.py`에 Golden Dataset 기반 GraphRAG 검색 평가 예제를 추가했습니다.
+- `scripts/run_load_test.py`에 Kafka 더미 이벤트 100건 주입, API 상태 확인, 에이전트 검색 요청을 묶은 부하 확인 스크립트를 추가했습니다.
+- `apps/backend_api/router/search.py`와 `apps/retrieval/tools.py`에 하이브리드 벡터·키워드 검색 및 Neo4j 그래프 컨텍스트 조회를 위한 에이전트 검색 구성 요소를 추가했습니다.
+
+### Chaos Mesh 실험
+
+- `k8s/experiments/network_delay_experiment.yaml`: vLLM 대상으로 2초 지연과 200ms 지터를 주입합니다.
+- `k8s/experiments/pod_kill_experiment.yaml`: Kafka Pod 하나를 5분마다 종료하는 복원력 실험입니다.
+- Argo CD 애플리케이션 이름을 `signalflow-platform`으로 변경했습니다.
