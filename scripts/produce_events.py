@@ -1,8 +1,8 @@
-import time
-import uuid
+import base64
 import random
 import sys
-import base64
+import time
+import uuid
 from pathlib import Path
 
 # 이 파일을 직접 실행해도 프로젝트 루트의 schemas 패키지를 찾도록 한다.
@@ -10,9 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from confluent_kafka import Producer
+from confluent_kafka import Producer  # pyright: ignore[reportMissingImports]  # noqa: E402
 
-from schemas.event_schema_v1_pb2 import IntelligenceEvent, EventCategory
+from schemas.event_schema_v1_pb2 import EventCategory, IntelligenceEvent  # noqa: E402
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 TOPIC_NAME = "unstructured-events"
