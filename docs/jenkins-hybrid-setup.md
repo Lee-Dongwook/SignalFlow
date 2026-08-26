@@ -47,4 +47,4 @@ Jenkins에 다음 Credential을 등록합니다.
 
 ## 4. 확인 방법
 
-`main`에 커밋을 푸시하면 GitHub Actions의 **Trigger Jenkins CI/CD**가 Jenkins Job을 호출합니다. Jenkins에서 각 단계가 성공한 뒤 GHCR에 세 서비스 이미지가 올라가고, Flink 매니페스트가 새 이미지 태그로 커밋됩니다. 이 자동 커밋에는 `[skip ci]`가 포함되어 다시 Jenkins를 호출하지 않습니다.
+`main`에 커밋을 푸시하면 GitHub Actions의 **Trigger Jenkins CI/CD**가 Jenkins Job을 호출합니다. Jenkins는 Job에 설정한 `main` 브랜치를 체크아웃하고, 각 단계가 성공한 뒤 GHCR에 세 서비스 이미지를 올립니다. 마지막으로 Flink 매니페스트가 새 이미지 태그로 커밋됩니다. 이 자동 커밋에는 `[skip ci]`가 포함되어 다시 Jenkins를 호출하지 않습니다.
