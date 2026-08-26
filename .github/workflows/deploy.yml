@@ -26,4 +26,6 @@ jobs:
           curl --fail --silent --show-error \
             --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
             --request POST \
-            "${JENKINS_URL%/}/job/${JOB_URL}/build"
+            --data-urlencode "GIT_SHA=${{ github.sha }}" \
+            --data-urlencode "GIT_REF=${{ github.ref }}" \
+            "${JENKINS_URL%/}/job/${JOB_URL}/buildWithParameters"
