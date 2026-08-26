@@ -1,4 +1,4 @@
-name: SignalFlow Production GitOps CI/CD
+name: SignalFlow Build CI
 
 on:
   push:
@@ -18,16 +18,10 @@ jobs:
 
       - name: Validate Protobuf Schemas
         run: |
-          pip install grpcio-tools
+          pip install "grpcio-tools>=1.60.0,<1.63.0"
           python -m grpc_tools.protoc -I. --python_out=. schemas/event_schema_v1.proto
+
       - name: Build Dashboard & Backend API Images
         run: |
           docker build -t registry.signalflow.io/dashboard:${{ github.sha }} -f apps/dashboard/Dockerfile .
           docker build -t registry.signalflow.io/backend-api:${{ github.sha }} -f apps/backend_api/Dockerfile .
-      - name: Update Helm Chart Values
-        run: |
-          sed -i 's/tag: .*/tag: "${{ github.sha }}"/' k8s/helm/values.yaml
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore(deploy): update image tag to ${{ github.sha }}"
-          git push

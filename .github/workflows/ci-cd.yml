@@ -9,7 +9,11 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{github.repository}}/flink-jobs
+  IMAGE_NAME: lee-dongwook/signalflow/flink-jobs
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   build-and-deploy:
@@ -31,14 +35,14 @@ jobs:
         with:
           images: ${{env.REGISTRY}}/${{env.IMAGE_NAME}}
           tags: |
-            type=sha,format=short
-            latest
+            type=sha,format=short,prefix=
+            type=raw,value=latest
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: ./apps/flink_jobs
-          file: ./apps/flink_jobs/Dockefile
+          file: ./apps/flink_jobs/Dockerfile
           push: true
           tags: ${{steps.meta.outputs.tags}}
           labels: ${{steps.meta.outputs.labels}}
@@ -46,10 +50,11 @@ jobs:
       - name: Update K8s manifest
         run: |
           SHORT_SHA=$(echo ${{github.sha}} | cut -c1-7)
-          sed -i "s|image: ghcr.io/.*:.*|image: ${{env.REGISTRY}}/${{env.IMAGE_NAME}}:${SHORT_SHA}|g" k8s/flink-jobmanager.yml
+          sed -i "s|image: ghcr.io/.*:.*|image: ${{env.REGISTRY}}/${{env.IMAGE_NAME}}:${SHORT_SHA}|g" k8s/manifests/flink-jobmanager.yml
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add k8s/flink-jobmanager.yml
-          git commit -m "chore(deps): update flink image tag to ${SHORT_SHA} [skip ci]" || exit 0
+          git add k8s/manifests/flink-jobmanager.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(deps): update flink image tag to ${SHORT_SHA} [skip ci]"
           git push

@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+*.log
+.env
+*.env
+apps/dashboard/node_modules
+apps/dashboard/.next
+apps/dashboard/coverage
+apps/dashboard/.env*
