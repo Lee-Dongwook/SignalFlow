@@ -66,3 +66,5 @@ great_expectations/uncommitted/
 *.swo
 .DS_Store
 Thumbs.db
+
+pl/*
