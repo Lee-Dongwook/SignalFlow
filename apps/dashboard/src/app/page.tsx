@@ -1,16 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  Activity,
-  Cpu,
-  Database,
-  Bot,
-  AlertTriangle,
-  CheckCircle2,
-  Zap,
-  GitMerge,
-} from "lucide-react";
+import { Activity, Cpu, Database, Bot, CheckCircle2, Zap } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -19,6 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { subscribeMetricsStream, triggerHealAgent } from "@/lib/api";
 
 // Mock Real-time Chart Data
 const initialTrafficData = [
@@ -56,6 +48,9 @@ export default function SignalFlowDashboard() {
     },
   ]);
 
+  const [metrics, setMetrics] = useState<any>(null);
+  const [healStatus, setHealStatus] = useState<string>("");
+
   // 실시간 트래픽 시뮬레이션
   useEffect(() => {
     const interval = setInterval(() => {
@@ -74,6 +69,23 @@ export default function SignalFlowDashboard() {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeMetricsStream((data) => {
+      setMetrics(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleManualHeal = async (eventId: string) => {
+    try {
+      setHealStatus("Processing...");
+      const res = await triggerHealAgent(eventId, "SchemaAgent");
+      setHealStatus(`Success: ${res.status || "Healed"}`);
+    } catch (err) {
+      setHealStatus("Failed to heal event");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans">
@@ -219,6 +231,40 @@ export default function SignalFlowDashboard() {
             </button>
           </div>
         </div>
+      </div>
+      {/* SSE 실시간 지표 표시 */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="p-4 bg-slate-100 rounded">
+          <p className="text-sm text-gray-500">TPS</p>
+          <p className="text-xl font-bold">{metrics?.tps ?? 0}</p>
+        </div>
+        <div className="p-4 bg-slate-100 rounded">
+          <p className="text-sm text-gray-500">DLQ Count</p>
+          <p className="text-xl font-bold text-red-500">
+            {metrics?.dlq_count ?? 0}
+          </p>
+        </div>
+        <div className="p-4 bg-slate-100 rounded">
+          <p className="text-sm text-gray-500">Circuit Breaker</p>
+          <p className="text-xl font-bold">
+            {metrics?.circuit_breaker_open ? "OPEN" : "CLOSED"}
+          </p>
+        </div>
+      </div>
+
+      {/* 수동 수리 제어 영역 */}
+      <div className="p-4 border rounded">
+        <h2 className="font-semibold mb-2">Self-Healing Control</h2>
+        <button
+          type="button"
+          onClick={() => handleManualHeal("evt-9012")}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Trigger Heal (evt-9012)
+        </button>
+        {healStatus && (
+          <p className="mt-2 text-sm text-gray-600">{healStatus}</p>
+        )}
       </div>
     </div>
   );
