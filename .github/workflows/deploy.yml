@@ -18,8 +18,8 @@ jobs:
 
       - name: Validate Protobuf Schemas
         run: |
-          pip install protobuf
-          protoc --python_out=. schemas/event_schema_v1.proto
+          pip install grpcio-tools
+          python -m grpc_tools.protoc -I. --python_out=. schemas/event_schema_v1.proto
       - name: Build Dashboard & Backend API Images
         run: |
           docker build -t registry.signalflow.io/dashboard:${{ github.sha }} -f apps/dashboard/Dockerfile .
