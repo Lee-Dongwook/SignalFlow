@@ -1,27 +1,31 @@
-name: SignalFlow Build CI
+name: Trigger Jenkins CI/CD
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  validate-and-build:
+  trigger-jenkins:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python & Node.js
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Validate Protobuf Schemas
+      - name: Trigger Jenkins pipeline
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+          JENKINS_JOB_PATH: ${{ secrets.JENKINS_JOB_PATH }}
         run: |
-          pip install "grpcio-tools>=1.60.0,<1.63.0"
-          python -m grpc_tools.protoc -I. --python_out=. schemas/event_schema_v1.proto
+          : "${JENKINS_URL:?Set the JENKINS_URL repository secret.}"
+          : "${JENKINS_USER:?Set the JENKINS_USER repository secret.}"
+          : "${JENKINS_API_TOKEN:?Set the JENKINS_API_TOKEN repository secret.}"
+          : "${JENKINS_JOB_PATH:?Set the JENKINS_JOB_PATH repository secret.}"
 
-      - name: Build Dashboard & Backend API Images
-        run: |
-          docker build -t registry.signalflow.io/dashboard:${{ github.sha }} -f apps/dashboard/Dockerfile .
-          docker build -t registry.signalflow.io/backend-api:${{ github.sha }} -f apps/backend_api/Dockerfile .
+          JOB_URL=$(printf '%s' "$JENKINS_JOB_PATH" | sed 's#/#/job/#g')
+          curl --fail --silent --show-error \
+            --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
+            --request POST \
+            --data-urlencode "GIT_SHA=${{ github.sha }}" \
+            --data-urlencode "GIT_REF=${{ github.ref }}" \
+            "${JENKINS_URL%/}/job/${JOB_URL}/buildWithParameters"
