@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: flink-data-pipeline
+  name: signalflow-platform
   namespace: argocd
 spec:
   project: default
