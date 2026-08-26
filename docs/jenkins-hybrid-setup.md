@@ -19,7 +19,7 @@ GitHub Actions는 Jenkins 파이프라인을 시작만 하고, Protobuf 검증·
     cat /var/jenkins_home/secrets/initialAdminPassword
   ```
 
-- 이 구성은 Jenkins 컨트롤러에 Docker CLI와 Python 3를 포함하고, 별도 Docker-in-Docker 서비스가 이미지 빌드를 담당합니다. 학습·개발 환경에서는 `Jenkinsfile`의 `agent any`가 컨트롤러에서 실행됩니다.
+- 이 구성은 Jenkins 컨트롤러에 Docker CLI와 Python 3 가상환경 도구를 포함하고, 별도 Docker-in-Docker 서비스가 이미지 빌드를 담당합니다. 학습·개발 환경에서는 `Jenkinsfile`의 `agent any`가 컨트롤러에서 실행됩니다.
 - 저장소를 Pipeline from SCM 방식으로 연결하고, 경로를 `Jenkinsfile`로 지정합니다.
 - GitHub 플러그인 또는 GitHub Checks 플러그인을 연결하면 Jenkins 실행 결과를 커밋 상태로 표시할 수 있습니다.
 

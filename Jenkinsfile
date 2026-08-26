@@ -39,8 +39,9 @@ pipeline {
         stage('Validate Protobuf schemas') {
             steps {
                 sh '''
-                    python3 -m pip install --user "grpcio-tools>=1.60.0,<1.63.0"
-                    python3 -m grpc_tools.protoc -I. --python_out=. schemas/event_schema_v1.proto
+                    python3 -m venv .ci-venv
+                    .ci-venv/bin/python -m pip install "grpcio-tools>=1.60.0"
+                    .ci-venv/bin/python -m grpc_tools.protoc -I. --python_out=. schemas/event_schema_v1.proto
                 '''
             }
         }
