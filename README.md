@@ -1,203 +1,193 @@
 # SignalFlow
 
-## 개요
+> 실시간 비정형 이벤트를 수집·검증하고, 장애 이벤트를 DLQ와 멀티 에이전트로 복구하며, 검색·관측 레이어에 제공하는 스트리밍 데이터 플랫폼입니다.
 
-다량 건의 비정형 텍스트/이벤트 스트림을 밀리초(ms) 단위의 지연 시간으로 수집/정제하고, Data Quality 자동 모니터링과
-ACID 레이크하우스 및 LLM RAG/Knowledge Graph 서빙 레이어를 통합한 대규모 실시간 데이터 플랫폼
+## 프로젝트 소개
 
-### 프로젝트 구조
+SignalFlow는 Kafka로 유입된 Protobuf 이벤트를 Flink로 처리합니다. 처리 과정에서 데이터 품질을 검사하고, 임베딩 및 그래프 정보를 ClickHouse와 Neo4j에 적재합니다. 오류 이벤트는 DLQ에서 분리한 뒤 자가복구 워커가 재처리합니다. FastAPI 제어 API와 Next.js 대시보드는 파이프라인 상태를 확인하는 데 사용합니다.
 
-```text
-root/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml             # GitHub Actions CI/CD Pipeline
-│
-├── apps/                       # 애플리케이션 및 소스 코드
-│   ├── producer/               # Data Ingestion (OpenTelemetry Trace Context 주입)
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   └── src/
-│   │       ├── main.py
-│   │       └── generators.py
-│   │
-│   ├── flink_jobs/             # Real-time Stream Processing & DQ Gate
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   └── src/
-│   │       └── jobs/
-│   │           ├── dedup_and_quality_check.py
-│   │           ├── validator_dlq_pipeline.py  # Schema Validation & DLQ Side Output
-│   │           ├── flink_to_clickhouse.py     # ClickHouse JDBC Sink
-│   │           └── kafka_to_iceberg.py
-│   │
-│   └── ai_indexer/             # Vector Indexer & Knowledge Graph Sink
-│       ├── Dockerfile
-│       └── indexer.py
-│
-├── schemas/
-│   └── raw_event.avsc          # Confluent Schema Registry (Avro Data Contract)
-│
-├── scripts/
-│   └── dlq_replay_job.py       # DLQ 격리 메시지 재처리(Replay) Worker
-│
-├── infra/                      # 인프라 컴포넌트별 상세 설정 (Config & Scripts)
-│   ├── minio/
-│   │   └── init-buckets.sh
-│   ├── clickhouse/
-│   │   └── init.sql            # Materialized View & SummingMergeTree DDL
-│   ├── elasticsearch/
-│   │   └── mappings.json
-│   ├── neo4j/
-│   │   └── schema.cypher
-│   ├── prometheus/
-│   │   └── prometheus.yml
-│   └── grafana/
-│       └── provisioning/
-│
-├── k8s/                        # GitOps Kubernetes Manifests (ArgoCD)
-│   ├── application.yml
-│   ├── flink-jobmanager.yml
-│   └── flink-taskmanager.yml
-│
-└── orchestration/              # Batch & Pipeline Workflow (Airflow & dbt)
-    ├── dags/
-    │   ├── daily_iceberg_compaction.py # Small File Compaction & Expiry DAG
-    │   └── dbt_spark_batch_dag.py      # Star Schema 차원 모델링 DAG
-    ├── dbt/                    # dbt Spark-Iceberg 프로젝트
-    │   ├── dbt_project.yml
-    │   ├── profiles.yml
-    │   └── models/
-    │       ├── staging/
-    │       └── marts/
-    └── spark_jobs/
-        └── iceberg_compaction.py
-```
+### 핵심 기능
 
-### 기술 스택
+- **실시간 이벤트 처리**: Kafka → PyFlink 스트림에서 Protobuf 이벤트를 파싱하고 데이터 품질을 평가합니다.
+- **품질 격리 및 복구**: 문제 이벤트를 DLQ로 분기하고, 재시도 및 서킷 브레이커를 갖춘 복구 에이전트가 처리합니다.
+- **다중 저장소 서빙**: 벡터·메타데이터는 ClickHouse, 엔터티 관계는 Neo4j로 전달합니다.
+- **검색 파이프라인**: ClickHouse 하이브리드 검색, 리랭킹, Neo4j 그래프 컨텍스트를 결합합니다.
+- **운영 화면/API**: FastAPI의 상태·SSE 메트릭·복구 API와 Next.js 대시보드를 제공합니다.
+- **관측 및 인프라**: Prometheus, Grafana, Jaeger, MinIO, Elasticsearch 등을 Docker Compose로 구성합니다.
 
-1.  Ingestion & Bus
-
-- **Kafka** : 초당 수천 ~ 수만 건의 비정형 이벤트 흡수 및 Loose Coupling 디커플링 구조 확보
-- **Confluent Schema Registry(Avro)**: Upstream 스키마 변경 감지 및 데이터 계약 (Data Contract) 강제
-
-2.  Stream Processing
-
-- **Flink, PyFlink** : Event-Time 기반 Deduplication, State TTL 관리, Side Output 기반 Dead Letter Queue(DLQ) 라우팅
-
-3.  Data Lakehouse & Batch Modeling
-
-- **Apache Iceberg, MinIO** : S3 API 기반 ACID 트랜잭선, Time Travel (시점 복구), Schema Evolution 보장
-- **Spark & dbt** : Small File Compaction 자동화 및 Star Schema 기반 차원 모델링(Dimension & Fact Table)
-
-4.  Serving & AI Layer
-
-- **ClickHouse** : Materialized View 및 SummingMergeTree 기반 실시간 OLAP 집계 서빙
-- **Elasticsearch, Neo4j** : Dense Vector 기반 Hybrid Search(RAG) 및 Entity Knowledge Graph 구축
-
-5.  Data Quality & Observability & GitOps
-
-- **Prometheus, Grafana** : In-flight Drop Ratio, Processing Lag, Operator Throughput 실시간 관측
-- **OpenTelemetry & jaeger** : Producer - Flink - DB 전 구간 W3C Context 주입 기반 Distributed Tracing.
-- **Github Actions & ArgoCD** : K8s Manifest 연동 기반 무중단 GitOps CI/CD 배포 자동화
-
-### 파이프라인 아키텍처
+## 아키텍처
 
 ```text
-[ Data Ingestion Layer ]
-  - Scraper / News API / RSS Streams (OTel Trace Context Injected)
-        │
-        ▼
-  [ Apache Kafka ] ─── (Topic: raw-intelligence-stream)
-        │
-        ├───▶ [ Schema Registry ] (Avro Data Contract Validation)
-        │
-[ Stream Processing & DQ Layer ]
-  - [ Apache Flink (PyFlink) ]
-      ├── State TTL (1h) & Event-Time Windowing (Deduplication)
-      ├── In-flight Data Quality Gate (Validation)
-      └── Side Output ──▶ [ Kafka DLQ Topic ] ──▶ [ Replay Worker ]
-        │
-        ├───────────────────────┬───────────────────────┬───────────────────────┐
-        ▼                       ▼                       ▼                       ▼
-[ Storage, Serving & AI Layer ]
-┌─────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
-│ Apache Iceberg (MinIO)  │  │ ClickHouse             │  │ Elasticsearch & Neo4j  │  │ OpenTelemetry / Jaeger │
-│ - Time Travel & Audit   │  │ - Materialized View    │  │ - Vector Hybrid Search │  │ - E2E Distributed      │
-│ - dbt Batch Star Schema │  │ - Low-Latency Aggs     │  │ - Entity Knowledge Graph│ │   Tracing Observability│
-└─────────────────────────┘  └────────────────────────┘  └────────────────────────┘  └────────────────────────┘
+Producer (Protobuf/Base64)
+          │
+          ▼
+Kafka: unstructured-events
+          │
+          ▼
+PyFlink: 역직렬화 → 데이터 품질 평가 → 임베딩
+          │                       │
+          │                       └── DLQ: dlq-intelligence-stream
+          ▼                                      │
+ClickHouse Vector Sink + Neo4j Graph Sink        ▼
+                                          DLQ Self-Healing Agent
+                                                  │
+                                                  └── raw-telemetry-stream 재투입
+
+FastAPI Control API ── SSE 메트릭 / 복구 요청 ── Next.js Dashboard
 ```
 
-### 실행 단계
+## 기술 스택
 
-#### 1. 인프라 컨테이너 구동
+| 영역        | 구성                                                            |
+| ----------- | --------------------------------------------------------------- |
+| 메시징·처리 | Kafka, Apache Flink/PyFlink, Protobuf                           |
+| 저장·검색   | MinIO/Iceberg, ClickHouse, Elasticsearch, Neo4j                 |
+| AI·복구     | vLLM 임베딩, LangGraph 기반 복구 흐름, Tenacity 재시도          |
+| API·UI      | FastAPI, SSE, Next.js 14, React, Tailwind CSS                   |
+| 관측·배포   | Prometheus, Grafana, Jaeger, Docker Compose, Kubernetes/Argo CD |
 
-`docker compose up -d`
+## 프로젝트 구조
 
-#### 2. Kafka 토픽 및 DLQ 토픽 생성
-
+```text
+.
+├── apps/
+│   ├── backend_api/          # FastAPI 제어 API
+│   ├── dashboard/            # Next.js 모니터링 대시보드
+│   ├── dlq_healing_agent/    # DLQ 자가복구 워커와 서킷 브레이커
+│   ├── flink_jobs/           # Flink Docker 이미지와 스트림 작업 예제
+│   ├── producer/             # 이벤트 생산기
+│   └── retrieval/            # 하이브리드 검색·리랭킹·그래프 컨텍스트
+├── jobs/                     # 로컬 PyFlink 스트리밍 파이프라인
+├── schemas/                  # Protobuf 이벤트 계약
+├── scripts/                  # 이벤트 생산, E2E·검색 테스트 스크립트
+├── tests/                    # API, 복구, 스키마, 인프라 테스트
+├── infra/                    # 저장소·관측 도구 설정
+├── k8s/                      # Argo CD, Helm, Flink, Chaos 실험 매니페스트
+└── orchestration/            # Airflow·dbt 배치 작업
 ```
-docker exec -it kafka kafka-topics --create --topic raw-intelligence-stream --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
 
-docker exec -it kafka kafka-topics --create --topic dlq-intelligence-stream --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+## 시작하기
+
+### 1. 준비물
+
+- Docker Desktop과 Docker Compose
+- Python 3.10 이상
+- Node.js 18 이상 및 pnpm 9
+
+### 2. 환경 변수 설정
+
+예시 파일을 복사한 후, 사용하는 포트와 자격 증명을 채웁니다. 실제 비밀값은 커밋하지 않습니다.
+
+```bash
+cp .env.example .env
 ```
 
-#### 3. ArgoCD GitOps 배포 적용
+최소한 `KAFKA_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`, `MINIO_CONSOLE_PORT`, `CLICKHOUSE_PORT`, `ELASTICSEARCH_PORT`, `GRAFANA_PORT`를 설정해야 기본 Compose 구성이 시작됩니다. vLLM 기반 E2E 테스트는 별도로 `HF_TOKEN`이 필요할 수 있습니다.
 
+### 3. 인프라 시작
+
+```bash
+docker compose up -d
+docker compose ps
 ```
-kubectl apply -f k8s/application.yml
+
+컨테이너가 시작된 뒤 Kafka 토픽을 생성합니다. 이미 있으면 생성 명령은 오류를 반환할 수 있습니다.
+
+```bash
+docker exec kafka kafka-topics --create --if-not-exists \
+  --topic unstructured-events --bootstrap-server localhost:9092 \
+  --partitions 3 --replication-factor 1
+
+docker exec kafka kafka-topics --create --if-not-exists \
+  --topic dlq-intelligence-stream --bootstrap-server localhost:9092 \
+  --partitions 1 --replication-factor 1
+
+docker exec kafka kafka-topics --create --if-not-exists \
+  --topic raw-telemetry-stream --bootstrap-server localhost:9092 \
+  --partitions 3 --replication-factor 1
 ```
 
-#### 4. 대시보드 및 모니터링 접속
+### 4. Python 환경과 API 실행
 
-- Flink UI: http://localhost:8081
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+uvicorn apps.backend_api.main:app --reload --port 8001
+```
 
-- Grafana: http://localhost:3000
+다른 터미널에서 API를 확인합니다.
 
-- Jaeger UI (Tracing): http://localhost:16686
+```bash
+curl http://localhost:8001/health
+curl -N http://localhost:8001/api/v1/stream/metrics
+curl -X POST http://localhost:8001/api/v1/agents/heal \
+  -H 'Content-Type: application/json' \
+  -d '{"event_id":"evt-9012","target_agent":"SchemaAgent"}'
+```
 
-- ArgoCD UI: http://localhost:8080
+`/health`는 서비스 상태를, `/api/v1/stream/metrics`는 1초 간격의 SSE 메트릭을, `/api/v1/agents/heal`은 복구 요청 결과를 반환합니다.
 
----
+### 5. 대시보드 실행
 
-### 주요 문제 해결 과정 및 Trouble-Shooting
+```bash
+cd apps/dashboard
+pnpm install
+pnpm dev
+```
 
-#### 1. Upstream 이중 발송으로 인한 데이터 중복 및 Downstream RAG Index pollution
+브라우저에서 `http://localhost:3000`을 엽니다. 현재 대시보드의 차트와 복구 로그는 데모용 시뮬레이션 데이터이며, API 연동은 이후 확장 지점입니다.
 
-- **문제** : 네트워크 재시도 및 수집 스크랩퍼의 특성으로 동일한 `event_id`를 가진 중복 데이터가 10% 이상 유입되어,
-  서빙 레이어의 계산 오차와 LLM Vector DB 중복 저장 발생
+### 6. 로컬 스트림 실행 (선택)
 
-- **해결** :
-  - Flink SQL의 `ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY ts ASC)` 구문을 적용하여 가장 먼저 유입된 이벤트만 필터링 하는 **Deduplication Pipeline** 구축
-  - State 메모리 오버 사용을 방지하고자 `table.exec.state.ttl=1h`를 설정하여 1시간 경과한 Key의 State를 자동으로 Eviction
+Kafka 커넥터 JAR가 `.flink/lib/flink-sql-connector-kafka-3.1.0-1.18.jar`에 있어야 합니다. 다른 위치라면 `FLINK_KAFKA_CONNECTOR_JAR`로 지정합니다.
 
-- **결과** : 중복 수신율 절감, Flink TaskManager 메모리 사용량 안정화 (특정 Peak 구간 대비 State Memory 65% 절감)
+```bash
+python scripts/produce_events.py
+# 별도 터미널
+python jobs/streaming_pipeline_job.py
+```
 
-#### 2. Upstream 임의 스키마 변경 대응 및 내결함성(DLQ) 확보
+## 테스트
 
-- **문제** : Upstream API의 임의 스키마 변경 및 Null 유입 발생 시 Flink 파이프라인 전체가 멈추거나 (Crash Loop), Downstream DB로 비정상 데이터가 적재되는 현상 발생.
+의존성을 설치한 가상환경에서 다음 명령으로 단위·통합 테스트를 실행합니다.
 
-- **해결** :
-  - Schema Registry(Avro) 기반 데이터 계약을 체결하고, Flink 내부에 ProcessFunction + Side Output 패턴을 구현해 결함 데이터를 Kafka DLQ Topic으로 실시간 분기 처리.
-  - 에러 메타데이터가 포함된 DLQ 메시지를 복구하여 메인 토픽으로 다시 보낼 수 있는 DLQ Replay Worker 파이프라인 세팅.
+```bash
+pytest tests/test_backend_api.py tests/test_dashboard_integration.py tests/test_schemas.py
+pytest tests/test_agent_resilience.py
+```
 
-- **결과** : 파이프라인 다운타임 0건 유지, 데이터 손실 없는 내결함성(Fault-tolerance) 체계 구축.
+Docker 기반 전체 인프라 검증은 다음처럼 실행할 수 있습니다.
 
-#### 3. Iceberg 레이크하우스 Small File Problem 및 Read Latency 저하
+```bash
+docker compose -f docker-compose.test.yml up -d
+pytest tests/infrastructure
+docker compose -f docker-compose.test.yml down
+```
 
-- **문제** : 초 단위로 실시간 무중단 적재되는 Flink Iceberg Sink 특성상 수 KB 크기의 Small Parquet 파일이 기하급수적으로 증가하여 배치 분석 및 쿼리 속도 심각하게 저하.
+vLLM·Kafka·ClickHouse·Neo4j까지 포함한 E2E 흐름은 추가 자원과 모델 다운로드가 필요합니다.
 
-- **해결** :
-  - Airflow 기반 PySpark Compaction DAG를 구축하여 매일 새벽 소형 파일들을 128MB 표준 Parquet 파일로 병합(rewrite_data_files).
-  - 24시간이 지난 구 스냅샷 및 Orphan Files을 자동 정제(expire_snapshots)하는 리텐션 주기 적용.
+```bash
+python scripts/run_e2e_test.py
+```
 
-- **결과** : 파일 수 90% 이상 감소 및 Iceberg 레이크하우스 쿼리 Read Latency 대폭 단축.
+실패 시에는 `docker compose ps`, `docker compose logs <서비스명>`, Flink UI와 애플리케이션 로그를 함께 확인합니다.
 
-#### 4. 실시간 집계 쿼리 병목 해소 및 서빙 속도 개선
+## 주요 접속 주소
 
-- **문제** : 대시보드 API 요청 시마다 Raw 테이블 전체 대상 GROUP BY 실시간 집계 쿼리가 실행되어 서빙 지연 시간 증가.
+| 서비스           | 주소                                     |
+| ---------------- | ---------------------------------------- |
+| FastAPI 문서     | `http://localhost:8001/docs`             |
+| Next.js 대시보드 | `http://localhost:3000`                  |
+| Flink UI         | `http://localhost:8081`                  |
+| Grafana          | `http://localhost:${GRAFANA_PORT}`       |
+| Prometheus       | `http://localhost:9090`                  |
+| Jaeger           | `http://localhost:16686`                 |
+| MinIO Console    | `http://localhost:${MINIO_CONSOLE_PORT}` |
+| Neo4j Browser    | `http://localhost:7474`                  |
 
-- **해결** :
-  - ClickHouse의 Materialized View와 SummingMergeTree 엔진을 조합하여, 쓰기 시점에 1분 단위 집계를 미리 연산하도록 서빙 레이어 구조 변경.
+## 문서와 다음 단계
 
-- **결과** : API 조회 쿼리 Latency를 500ms 이상에서 10ms 미만으로 극적 단축.
+- 인프라 구성에서 겪은 문제와 해결 과정은 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)에서 확인할 수 있습니다.
+- Kubernetes/Argo CD 적용 전에는 현재 매니페스트 경로(`k8s/argocd`, `k8s/manifests`)와 컨테이너 이미지 태그를 검토하세요.
+- 운영 환경에서는 기본 자격 증명과 넓은 CORS 설정을 환경별 설정으로 교체하고, 대시보드를 실제 SSE/API 데이터에 연결하는 것을 권장합니다.
