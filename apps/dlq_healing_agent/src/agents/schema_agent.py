@@ -1,37 +1,52 @@
-import json
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from src.state import DLQHealingState
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+from ..models import RecoveryProposal
+from ..state import DLQHealingState
 
-schema_prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are a Schema Repair Agent. Fix structural schema errors in the payload.
-Required Schema:
-- event_id: string
-- source: string
-- category: string
-- content: string
-- timestamp: integer (epoch ms)
+schema_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a Schema Repair Agent.
+Return a structured recovery proposal for a telemetry event with these fields:
+event_id (string), source (string), category (string), content (string).
+timestamp is an integer epoch in milliseconds.
+Only correct types or add a missing field when the value exists in trusted context.
+Never create content or other business facts absent from the payload and trusted context.
+If safe recovery is not possible, return recoverable=false with no corrected payload.
+List every change with its before value, after value, and reason.""",
+        ),
+        (
+            "user",
+            "Raw payload: {raw_payload}\nError: {error_message}\n"
+            "Trusted context: {recovery_context}\n"
+            "Supervisor proposal: {supervisor_proposal}",
+        ),
+    ]
+)
 
-Return ONLY a valid JSON string matching the required schema."""),
-    ("user", "Raw Payload: {raw_payload}\nError: {error_message}")
-])
+
+def build_schema_repair_chain():
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return schema_prompt | llm.with_structured_output(RecoveryProposal)
+
 
 def schema_repair_node(state: DLQHealingState) -> DLQHealingState:
-    chain = schema_prompt | llm
-    response = chain.invoke({
-        "raw_payload": state["raw_payload"],
-        "error_message": state["error_message"]
-    })
+    chain = build_schema_repair_chain()
+    proposal = chain.invoke(
+        {
+            "raw_payload": state["raw_payload"],
+            "error_message": state["error_message"],
+            "recovery_context": state.get("recovery_context", {}),
+            "supervisor_proposal": state["recovery_proposal"],
+        }
+    )
 
-    try:
-        repaired_json = json.loads(response.content.strip())
-        state["corrected_payload"] = repaired_json
-        state["is_repaired"] = True
-        state["logs"].append("Schema Agent successfully repaired.")
-    except Exception as e:
-        state["is_repaired"] = False
-        state["logs"].append(f"Schema Agent Repair failed: {str(e)}")
-
+    state["reason"] = proposal.reason.value
+    state["confidence"] = proposal.confidence
+    state["changes"] = [change.model_dump() for change in proposal.changes]
+    state["corrected_payload"] = proposal.corrected_payload
+    state["recovery_proposal"] = proposal.model_dump(mode="json")
+    state.setdefault("logs", []).append("Schema Agent completed recovery proposal.")
     return state
