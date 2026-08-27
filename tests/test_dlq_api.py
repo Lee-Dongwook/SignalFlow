@@ -1,8 +1,14 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from apps.backend_api.main import app
+from apps.backend_api.main import app, dlq_store
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_dlq_store():
+    dlq_store.reset()
 
 
 def test_list_dlq_events_returns_review_summaries():
@@ -10,7 +16,8 @@ def test_list_dlq_events_returns_review_summaries():
 
     assert response.status_code == 200
     assert len(response.json()) == 3
-    assert response.json()[0]["approval_status"] == "pending"
+    schema_event = next(event for event in response.json() if event["event_id"] == "evt-schema-001")
+    assert schema_event["approval_status"] == "pending"
 
 
 def test_get_dlq_event_returns_payload_and_audit_log():
@@ -43,8 +50,13 @@ def test_cannot_approve_event_on_hold():
 
 
 def test_reprocess_approved_dlq_event_records_replay_result():
+    approval_response = client.post(
+        "/api/v1/dlq/events/evt-schema-001/decision",
+        json={"decision": "approve"},
+    )
     response = client.post("/api/v1/dlq/events/evt-schema-001/reprocess")
 
+    assert approval_response.status_code == 200
     assert response.status_code == 200
     event = response.json()
     assert event["approval_status"] == "reprocessed"

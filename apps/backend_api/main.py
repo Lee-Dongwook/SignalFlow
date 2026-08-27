@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from .dlq_store import InMemoryDLQStore
+from .dlq_store import SQLiteDLQStore
 
 app = FastAPI(title="SignalFlow Backend Control API", version="1.0.0")
 
@@ -30,7 +30,7 @@ class DLQDecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
-dlq_store = InMemoryDLQStore()
+dlq_store = SQLiteDLQStore()
 
 @app.get("/health")
 async def health_check():
@@ -128,7 +128,7 @@ async def analyze_dlq_event(event_id: str):
     event["validation_result"] = result["validation_result"]
     event["approval_status"] = result["approval_status"]
     event["audit_logs"].extend(result["logs"])
-    return event
+    return dlq_store.record_analysis(event)
 
 
 @app.post("/api/v1/dlq/events/{event_id}/reprocess")
