@@ -94,3 +94,51 @@ def test_analysis_requires_openai_api_key(monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "OPENAI_API_KEY is not configured"
+
+
+def test_list_dlq_events_includes_events_created_before_analysis():
+    client.post(
+        "/api/v1/dlq/events",
+        json={
+            "event_id": "evt-created-002",
+            "error_message": "timestamp must be an integer",
+            "raw_payload": {"event_id": "evt-created-002"},
+        },
+    )
+
+    response = client.get("/api/v1/dlq/events")
+
+    assert response.status_code == 200
+    created_event = next(
+        event for event in response.json() if event["event_id"] == "evt-created-002"
+    )
+    assert created_event["analysis_status"] == "pending"
+    assert created_event["updated_at"]
+
+
+def test_dlq_event_detail_exposes_risk_reason_for_review():
+    hold_event = client.get("/api/v1/dlq/events/evt-value-002").json()
+    schema_event = client.get("/api/v1/dlq/events/evt-schema-001").json()
+
+    assert "content" in hold_event["risk_reason"]
+    assert schema_event["risk_reason"]
+    assert schema_event["rationale"]
+
+
+def test_failed_analysis_keeps_stored_review_data(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    from apps.dlq_healing_agent.src import graph as healing_graph
+
+    def failing_graph():
+        raise RuntimeError("openai request failed")
+
+    monkeypatch.setattr(healing_graph, "build_dlq_healing_graph", failing_graph)
+
+    response = client.post("/api/v1/dlq/events/evt-schema-001/analyze")
+
+    assert response.status_code == 502
+    event = client.get("/api/v1/dlq/events/evt-schema-001").json()
+    assert event["approval_status"] == "pending"
+    assert event["lifecycle"]["analysis_status"] == "failed"
+    assert "AI analysis failed" in event["audit_logs"][-1]

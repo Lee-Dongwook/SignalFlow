@@ -130,9 +130,22 @@ curl http://localhost:8001/api/v1/dlq/events/evt-schema-001
 curl -X POST http://localhost:8001/api/v1/dlq/events/evt-schema-001/decision \
   -H 'Content-Type: application/json' \
   -d '{"decision":"approve"}'
+curl -X POST http://localhost:8001/api/v1/dlq/events/evt-schema-001/reprocess
+curl -X POST http://localhost:8001/api/v1/dlq/events/evt-schema-001/analyze
 ```
 
-`/health`는 서비스 상태를, `/api/v1/stream/metrics`는 1초 간격의 SSE 메트릭을 반환합니다. `/api/v1/dlq/events`는 검토 대상 목록·상세를 제공하고, `decision` API는 승인 또는 보류 결정을 감사 로그에 남깁니다. 현재 DLQ API는 데모 fixture를 메모리에 보관하며, Kafka 재투입은 승인 이력과 분리된 다음 확장 단계입니다.
+`/health`는 서비스 상태를, `/api/v1/stream/metrics`는 1초 간격의 SSE 메트릭을 반환합니다. DLQ API는 다음 역할을 맡습니다.
+
+| 엔드포인트                              | 역할                                                          |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `GET /api/v1/dlq/events`                | 검토 대상 목록과 승인·분석 상태를 반환합니다.                 |
+| `POST /api/v1/dlq/events`               | 외부 파이프라인이 실패 이벤트를 분석 대기 상태로 등록합니다.  |
+| `GET /api/v1/dlq/events/{id}`           | 원본, 수정안, diff, 검증 결과, 위험 사유, 감사 로그를 줍니다. |
+| `POST .../decision`                     | 승인 또는 보류 결정을 감사 로그에 남깁니다.                   |
+| `POST .../analyze`                      | LangGraph 복구 분석을 실행합니다. API 키가 필요합니다.        |
+| `POST .../reprocess`                    | 승인된 이벤트만 재투입 어댑터로 전달합니다(시뮬레이션).       |
+
+검토 상태는 SQLite 파일에 저장하며 경로는 `SIGNALFLOW_DB_PATH`로 바꿀 수 있습니다. 파일이 비어 있으면 데모 fixture 3건을 자동으로 넣습니다. Kafka 실제 재투입은 승인 이력과 분리된 다음 확장 단계입니다.
 
 ### DLQ 복구 안전 흐름
 
@@ -154,7 +167,41 @@ pnpm install
 pnpm dev
 ```
 
-브라우저에서 `http://localhost:3000`을 엽니다. 현재 대시보드의 차트와 복구 로그는 데모용 시뮬레이션 데이터이며, API 연동은 이후 확장 지점입니다.
+브라우저에서 `http://localhost:3000`을 엽니다. 대시보드는 DLQ 목록, 원본·수정 payload, 변경 diff, Pydantic 검증 결과, AI 판단 근거와 위험 사유, 감사 로그를 한 화면에서 보여주고 승인·보류·재처리·AI 분석 실행 버튼을 API에 연결합니다. API 주소는 `NEXT_PUBLIC_API_URL`로 지정하며, Next.js는 이 값을 빌드 시점에 포함하므로 배포할 때는 빌드 전에 설정해야 합니다.
+
+### 5-1. 검토 서비스 단독 배포
+
+Kafka·ClickHouse 없이 DLQ 검토 화면만 배포할 수 있습니다. 백엔드는 fixture 3건을 SQLite에 넣고 시작하므로 외부 의존성 없이 동작합니다.
+
+```bash
+# 백엔드 이미지 (저장소 루트에서 빌드)
+docker build -f apps/backend_api/Dockerfile -t signalflow-api .
+docker run -p 8001:8001 \
+  -e SIGNALFLOW_ALLOWED_ORIGINS=https://<대시보드-도메인> \
+  -e OPENAI_API_KEY=<선택> \
+  signalflow-api
+
+# 대시보드 이미지 (API 주소는 빌드 인자로 넘겨야 합니다)
+docker build -f apps/dashboard/Dockerfile \
+  --build-arg NEXT_PUBLIC_API_URL=https://<백엔드-도메인> \
+  -t signalflow-dashboard .
+docker run -p 3000:3000 signalflow-dashboard
+```
+
+| 환경 변수                    | 대상     | 설명                                                                     |
+| ---------------------------- | -------- | ------------------------------------------------------------------------ |
+| `PORT`                       | 양쪽     | PaaS가 주입하는 포트. 없으면 8001 / 3000을 사용합니다.                   |
+| `SIGNALFLOW_ALLOWED_ORIGINS` | 백엔드   | 쉼표로 구분한 CORS 허용 도메인. 기본값 `*`은 데모 전용입니다.            |
+| `SIGNALFLOW_DB_PATH`         | 백엔드   | 검토 상태 SQLite 경로. 컨테이너 기본값은 `/app/data/signalflow.db`입니다. |
+| `OPENAI_API_KEY`             | 백엔드   | `analyze` API에만 필요합니다. 없으면 해당 API만 503을 반환합니다.        |
+| `NEXT_PUBLIC_API_URL`        | 대시보드 | 빌드 시점에 번들에 포함되므로 반드시 빌드 인자로 전달합니다.             |
+
+배포 후 확인할 것
+
+- `GET /health`가 200을 반환한다.
+- 대시보드에서 3개 사건 목록과 상세가 보인다.
+- 승인·보류 결정 후 감사 로그가 갱신된다.
+- 브라우저 콘솔에 CORS 오류가 없다.
 
 ### 6. 로컬 스트림 실행 (선택)
 
@@ -171,6 +218,8 @@ python jobs/streaming_pipeline_job.py
 의존성을 설치한 가상환경에서 다음 명령으로 단위·통합 테스트를 실행합니다.
 
 ```bash
+pytest tests/test_dlq_api.py tests/test_dlq_validator.py tests/test_dlq_graph.py \
+  tests/test_validator_node.py tests/test_supervisor_routing.py
 pytest tests/test_backend_api.py tests/test_dashboard_integration.py tests/test_schemas.py
 pytest tests/test_agent_resilience.py
 ```
@@ -218,13 +267,14 @@ python apps/dlq_healing_agent/src/worker.py
 
 실행 후 `http://localhost:8002/metrics`에서 Prometheus 형식의 지표를 확인할 수 있습니다. Docker 환경과 운영체제에 따라 `host.docker.internal` 주소가 해석되지 않을 수 있으므로, 해당 경우 Prometheus의 스크레이프 대상을 실행 환경에 맞게 조정해야 합니다.
 
-### 대시보드 실시간 연결
+### 대시보드 DLQ 검토 화면
 
-- 대시보드가 `/api/v1/stream/metrics` SSE 스트림을 구독해 TPS, DLQ 건수, 서킷 브레이커 상태를 표시하도록 확장했습니다.
-- `evt-9012`를 대상으로 `SchemaAgent` 복구를 요청하는 수동 복구 버튼을 추가했습니다.
+- 대시보드는 `/api/v1/dlq/events` 목록과 상세 API를 호출해 검토 화면을 구성합니다.
+- 승인·보류 버튼은 `decision` API에, 재처리 버튼은 `reprocess` API에, AI 분석 버튼은 `analyze` API에 연결됩니다.
+- 승인할 수 없는 상태(보류, 분석 전, 재처리 완료)는 버튼을 비활성화하고 그 사유를 화면에 표시합니다.
 - API 기본 주소는 `NEXT_PUBLIC_API_URL` 환경 변수로 변경할 수 있으며, 지정하지 않으면 `http://localhost:8001`을 사용합니다.
 
-현재 Backend API가 보내는 SSE 예제에는 `tps`만 포함되어 있습니다. `dlq_count`, `circuit_breaker_open`은 실제 메트릭 수집 로직과 연결할 때 표시됩니다.
+`/api/v1/stream/metrics` SSE 엔드포인트는 아직 예제 값을 반환하며, 실제 메트릭 수집 로직과 연결하는 것은 다음 확장 단계입니다.
 
 ### 검색 평가와 부하 확인
 

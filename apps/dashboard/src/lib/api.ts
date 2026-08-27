@@ -7,6 +7,8 @@ export type DLQEventSummary = {
   confidence: number;
   validation_status: string;
   approval_status: string;
+  analysis_status: string;
+  updated_at: string;
 };
 
 type RecoveryChange = {
@@ -27,6 +29,9 @@ export type DLQEventDetail = {
   corrected_payload: unknown | null;
   validation_result: { status: string; errors: string[] };
   audit_logs: string[];
+  rationale?: string;
+  risk_reason?: string;
+  lifecycle?: { analysis_status: string; created_at?: string; updated_at?: string };
   reprocess_result?: { status: string; target: string };
 };
 

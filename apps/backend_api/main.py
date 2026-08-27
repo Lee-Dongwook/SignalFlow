@@ -13,10 +13,16 @@ from .dlq_store import SQLiteDLQStore
 
 app = FastAPI(title="SignalFlow Backend Control API", version="1.0.0")
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("SIGNALFLOW_ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials="*" not in allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -86,8 +92,8 @@ async def list_dlq_events():
             "confidence": event["confidence"],
             "validation_status": event["validation_result"]["status"],
             "approval_status": event["approval_status"],
-            "analysis_status": event["lifecycle"]["analysis_status"],
-            "updated_at": event["lifecycle"]["updated_at"],
+            "analysis_status": event.get("lifecycle", {}).get("analysis_status", "ready"),
+            "updated_at": event.get("lifecycle", {}).get("updated_at", ""),
         }
         for event in dlq_store.list_events()
     ]
@@ -107,6 +113,8 @@ async def create_dlq_event(payload: DLQEventCreateRequest):
         "corrected_payload": None,
         "validation_result": {"status": "pending", "errors": []},
         "approval_status": "pending_analysis",
+        "rationale": "",
+        "risk_reason": "",
         "audit_logs": ["DLQ event was created and is waiting for analysis."],
         "lifecycle": {"analysis_status": "pending"},
     }
@@ -148,20 +156,31 @@ async def analyze_dlq_event(event_id: str):
 
     from apps.dlq_healing_agent.src.graph import build_dlq_healing_graph
 
-    result = build_dlq_healing_graph().invoke(
-        {
-            "raw_payload": event["raw_payload"],
-            "error_message": event["error_message"],
-            "recovery_context": event.get("recovery_context", {}),
-            "logs": [],
-        }
-    )
+    try:
+        result = build_dlq_healing_graph().invoke(
+            {
+                "raw_payload": event["raw_payload"],
+                "error_message": event["error_message"],
+                "recovery_context": event.get("recovery_context", {}),
+                "logs": [],
+            }
+        )
+    except Exception as error:
+        dlq_store.record_analysis_failure(event_id, str(error)[:200])
+        raise HTTPException(
+            status_code=502,
+            detail="AI analysis failed. The stored review data was kept unchanged.",
+        ) from error
+
+    proposal = result.get("recovery_proposal", {})
     event["reason"] = result["reason"]
     event["confidence"] = result["confidence"]
     event["changes"] = result["changes"]
     event["corrected_payload"] = result.get("corrected_payload")
     event["validation_result"] = result["validation_result"]
     event["approval_status"] = result["approval_status"]
+    event["rationale"] = proposal.get("rationale", "")
+    event["risk_reason"] = proposal.get("risk_reason", "")
     event["audit_logs"].extend(result["logs"])
     return dlq_store.record_analysis(event)
 

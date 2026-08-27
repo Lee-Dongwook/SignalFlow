@@ -42,6 +42,13 @@ SEED_EVENTS: list[dict[str, Any]] = [
         },
         "validation_result": {"status": "valid", "errors": []},
         "approval_status": "pending",
+        "rationale": (
+            "timestamp was a numeric string and category was recoverable from trusted context."
+        ),
+        "risk_reason": (
+            "category was filled from trusted context, "
+            "so an operator must confirm the context is correct."
+        ),
         "audit_logs": ["Supervisor classified schema_error.", "Validator returned valid."],
     },
     {
@@ -60,6 +67,11 @@ SEED_EVENTS: list[dict[str, Any]] = [
         "corrected_payload": None,
         "validation_result": {"status": "not_applicable", "errors": []},
         "approval_status": "on_hold",
+        "rationale": "content is a required business value and is missing from the payload.",
+        "risk_reason": (
+            "content cannot be generated because it exists "
+            "neither in the payload nor in trusted context."
+        ),
         "audit_logs": ["Supervisor classified missing_required_value.", "Event placed on hold."],
     },
     {
@@ -72,6 +84,11 @@ SEED_EVENTS: list[dict[str, Any]] = [
         "corrected_payload": None,
         "validation_result": {"status": "not_applicable", "errors": []},
         "approval_status": "on_hold",
+        "rationale": "the raw payload is truncated JSON and cannot be parsed safely.",
+        "risk_reason": (
+            "reconstructing the truncated JSON would invent fields, "
+            "so the original payload is preserved for manual review."
+        ),
         "audit_logs": ["Supervisor classified unrecoverable.", "Event placed on hold."],
     },
 ]
@@ -108,10 +125,12 @@ class SQLiteDLQStore:
 
     def _prepare_event(self, event: dict[str, Any]) -> dict[str, Any]:
         now = self._now()
-        event.setdefault(
-            "lifecycle",
-            {"analysis_status": "ready", "created_at": now, "updated_at": now},
-        )
+        lifecycle = event.setdefault("lifecycle", {})
+        lifecycle.setdefault("analysis_status", "ready")
+        lifecycle.setdefault("created_at", now)
+        lifecycle["updated_at"] = now
+        event.setdefault("rationale", "")
+        event.setdefault("risk_reason", "")
         return event
 
     def _save_event(self, event: dict[str, Any]) -> None:
@@ -185,5 +204,18 @@ class SQLiteDLQStore:
         return event
 
     def record_analysis(self, event: dict[str, Any]) -> dict[str, Any]:
+        event.setdefault("lifecycle", {})["analysis_status"] = "ready"
+        self._save_event(event)
+        return event
+
+    def record_analysis_failure(self, event_id: str, error_message: str) -> dict[str, Any] | None:
+        event = self.get_event(event_id)
+        if event is None:
+            return None
+
+        event.setdefault("lifecycle", {})["analysis_status"] = "failed"
+        event["audit_logs"].append(
+            f"AI analysis failed and the event was left unchanged. {error_message}"
+        )
         self._save_event(event)
         return event
