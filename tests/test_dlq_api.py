@@ -18,6 +18,8 @@ def test_list_dlq_events_returns_review_summaries():
     assert len(response.json()) == 3
     schema_event = next(event for event in response.json() if event["event_id"] == "evt-schema-001")
     assert schema_event["approval_status"] == "pending"
+    assert schema_event["analysis_status"] == "ready"
+    assert schema_event["updated_at"]
 
 
 def test_get_dlq_event_returns_payload_and_audit_log():

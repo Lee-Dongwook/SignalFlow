@@ -78,6 +78,8 @@ async def list_dlq_events():
             "confidence": event["confidence"],
             "validation_status": event["validation_result"]["status"],
             "approval_status": event["approval_status"],
+            "analysis_status": event["lifecycle"]["analysis_status"],
+            "updated_at": event["lifecycle"]["updated_at"],
         }
         for event in dlq_store.list_events()
     ]

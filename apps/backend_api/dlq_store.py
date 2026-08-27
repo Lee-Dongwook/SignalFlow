@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -96,10 +97,25 @@ class SQLiteDLQStore:
             if event_count == 0:
                 connection.executemany(
                     "INSERT INTO dlq_events (event_id, payload) VALUES (?, ?)",
-                    [(event["event_id"], json.dumps(event)) for event in deepcopy(SEED_EVENTS)],
+                    [
+                        (event["event_id"], json.dumps(self._prepare_event(event)))
+                        for event in deepcopy(SEED_EVENTS)
+                    ],
                 )
 
+    def _now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _prepare_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        now = self._now()
+        event.setdefault(
+            "lifecycle",
+            {"analysis_status": "ready", "created_at": now, "updated_at": now},
+        )
+        return event
+
     def _save_event(self, event: dict[str, Any]) -> None:
+        event.setdefault("lifecycle", {})["updated_at"] = self._now()
         with self._connect() as connection:
             connection.execute(
                 "UPDATE dlq_events SET payload = ? WHERE event_id = ?",
@@ -111,7 +127,10 @@ class SQLiteDLQStore:
             connection.execute("DELETE FROM dlq_events")
             connection.executemany(
                 "INSERT INTO dlq_events (event_id, payload) VALUES (?, ?)",
-                [(event["event_id"], json.dumps(event)) for event in deepcopy(SEED_EVENTS)],
+                [
+                    (event["event_id"], json.dumps(self._prepare_event(event)))
+                    for event in deepcopy(SEED_EVENTS)
+                ],
             )
 
     def list_events(self) -> list[dict[str, Any]]:
