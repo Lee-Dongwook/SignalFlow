@@ -82,7 +82,7 @@ FastAPI Control API ── SSE 메트릭 / DLQ 검토·승인 ── Next.js Das
 cp .env.example .env
 ```
 
-최소한 `KAFKA_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`, `MINIO_CONSOLE_PORT`, `CLICKHOUSE_PORT`, `ELASTICSEARCH_PORT`, `GRAFANA_PORT`를 설정해야 기본 Compose 구성이 시작됩니다. vLLM 기반 E2E 테스트는 별도로 `HF_TOKEN`이 필요할 수 있습니다.
+최소한 `KAFKA_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`, `MINIO_CONSOLE_PORT`, `CLICKHOUSE_PORT`, `ELASTICSEARCH_PORT`, `GRAFANA_PORT`를 설정해야 기본 Compose 구성이 시작됩니다. LLM 기반 복구 분석을 실행할 때만 서버 환경변수 `OPENAI_API_KEY`가 필요합니다. 키가 없어도 fixture 기반 DLQ 검토·승인·재처리 시뮬레이션은 동작합니다.
 
 ### 3. 인프라 시작
 
