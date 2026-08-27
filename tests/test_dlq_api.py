@@ -31,6 +31,22 @@ def test_get_dlq_event_returns_payload_and_audit_log():
     assert event["audit_logs"]
 
 
+def test_create_dlq_event_waits_for_analysis():
+    response = client.post(
+        "/api/v1/dlq/events",
+        json={
+            "event_id": "evt-created-001",
+            "error_message": "category is required",
+            "raw_payload": {"event_id": "evt-created-001"},
+        },
+    )
+
+    assert response.status_code == 201
+    event = response.json()
+    assert event["approval_status"] == "pending_analysis"
+    assert event["lifecycle"]["analysis_status"] == "pending"
+
+
 def test_approve_pending_dlq_event_records_operator_decision():
     response = client.post(
         "/api/v1/dlq/events/evt-schema-001/decision",

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,13 @@ class HealRequest(BaseModel):
 class DLQDecisionRequest(BaseModel):
     decision: Literal["approve", "hold"]
     note: str | None = Field(default=None, max_length=500)
+
+
+class DLQEventCreateRequest(BaseModel):
+    error_message: str = Field(min_length=1, max_length=2000)
+    raw_payload: dict | str
+    recovery_context: dict = Field(default_factory=dict)
+    event_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 dlq_store = SQLiteDLQStore()
@@ -83,6 +91,31 @@ async def list_dlq_events():
         }
         for event in dlq_store.list_events()
     ]
+
+
+@app.post("/api/v1/dlq/events", status_code=201)
+async def create_dlq_event(payload: DLQEventCreateRequest):
+    event_id = payload.event_id or f"evt-{uuid4().hex[:12]}"
+    event = {
+        "event_id": event_id,
+        "error_message": payload.error_message,
+        "raw_payload": payload.raw_payload,
+        "recovery_context": payload.recovery_context,
+        "reason": "unclassified",
+        "confidence": 0,
+        "changes": [],
+        "corrected_payload": None,
+        "validation_result": {"status": "pending", "errors": []},
+        "approval_status": "pending_analysis",
+        "audit_logs": ["DLQ event was created and is waiting for analysis."],
+        "lifecycle": {"analysis_status": "pending"},
+    }
+    try:
+        return dlq_store.create_event(event)
+    except Exception as error:
+        if "UNIQUE constraint failed" in str(error):
+            raise HTTPException(status_code=409, detail="DLQ event already exists") from error
+        raise
 
 
 @app.get("/api/v1/dlq/events/{event_id}")

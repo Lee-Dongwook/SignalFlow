@@ -138,6 +138,15 @@ class SQLiteDLQStore:
             rows = connection.execute("SELECT payload FROM dlq_events ORDER BY event_id").fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def create_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        prepared_event = self._prepare_event(event)
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO dlq_events (event_id, payload) VALUES (?, ?)",
+                (prepared_event["event_id"], json.dumps(prepared_event)),
+            )
+        return prepared_event
+
     def get_event(self, event_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
