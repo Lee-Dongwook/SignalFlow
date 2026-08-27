@@ -40,3 +40,18 @@ def test_cannot_approve_event_on_hold():
     )
 
     assert response.status_code == 409
+
+
+def test_reprocess_approved_dlq_event_records_replay_result():
+    response = client.post("/api/v1/dlq/events/evt-schema-001/reprocess")
+
+    assert response.status_code == 200
+    event = response.json()
+    assert event["approval_status"] == "reprocessed"
+    assert event["reprocess_result"]["status"] == "simulated_success"
+
+
+def test_cannot_reprocess_event_that_was_not_approved():
+    response = client.post("/api/v1/dlq/events/evt-value-002/reprocess")
+
+    assert response.status_code == 409

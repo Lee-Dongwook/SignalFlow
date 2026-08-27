@@ -95,3 +95,16 @@ class InMemoryDLQStore:
             event["approval_status"] = "on_hold"
             event["audit_logs"].append(f"Operator placed the event on hold. {note or ''}".strip())
         return event
+
+    def reprocess_event(self, event_id: str) -> dict[str, Any] | None:
+        event = self.get_event(event_id)
+        if event is None:
+            return None
+
+        event["approval_status"] = "reprocessed"
+        event["reprocess_result"] = {
+            "status": "simulated_success",
+            "target": "raw-telemetry-stream",
+        }
+        event["audit_logs"].append("Approved payload was sent to the replay adapter.")
+        return event

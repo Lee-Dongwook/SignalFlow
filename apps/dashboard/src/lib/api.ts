@@ -27,6 +27,7 @@ export type DLQEventDetail = {
   corrected_payload: unknown | null;
   validation_result: { status: string; errors: string[] };
   audit_logs: string[];
+  reprocess_result?: { status: string; target: string };
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -53,5 +54,11 @@ export function decideDLQEvent(eventId: string, decision: "approve" | "hold") {
   return request<DLQEventDetail>(`/api/v1/dlq/events/${eventId}/decision`, {
     method: "POST",
     body: JSON.stringify({ decision }),
+  });
+}
+
+export function reprocessDLQEvent(eventId: string) {
+  return request<DLQEventDetail>(`/api/v1/dlq/events/${eventId}/reprocess`, {
+    method: "POST",
   });
 }

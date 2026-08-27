@@ -100,3 +100,14 @@ async def decide_dlq_event(event_id: str, payload: DLQDecisionRequest):
 
     updated_event = dlq_store.record_decision(event_id, payload.decision, payload.note)
     return updated_event
+
+
+@app.post("/api/v1/dlq/events/{event_id}/reprocess")
+async def reprocess_dlq_event(event_id: str):
+    event = dlq_store.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="DLQ event not found")
+    if event["approval_status"] != "approved":
+        raise HTTPException(status_code=409, detail="Only approved events can be reprocessed")
+
+    return dlq_store.reprocess_event(event_id)

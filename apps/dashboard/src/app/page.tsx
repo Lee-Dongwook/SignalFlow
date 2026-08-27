@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Bot, ChevronRight, Clock3, FileJson2, ShieldCheck, Zap } from "lucide-react";
 
-import { decideDLQEvent, getDLQEvent, getDLQEvents, type DLQEventDetail, type DLQEventSummary } from "@/lib/api";
+import { decideDLQEvent, getDLQEvent, getDLQEvents, reprocessDLQEvent, type DLQEventDetail, type DLQEventSummary } from "@/lib/api";
 
 const reasonLabel: Record<string, string> = { schema_error: "스키마 오류", missing_required_value: "필수값 누락", unrecoverable: "복구 불가" };
 const statusStyle: Record<string, string> = {
   pending: "border-amber-400/30 bg-amber-400/10 text-amber-300",
   approved: "border-cyan-400/30 bg-cyan-400/10 text-cyan-300",
+  reprocessed: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   on_hold: "border-rose-400/30 bg-rose-400/10 text-rose-300",
   valid: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   not_applicable: "border-slate-500/30 bg-slate-500/10 text-slate-300",
@@ -68,6 +69,19 @@ export default function SignalFlowDashboard() {
     } finally { setIsSaving(false); }
   }
 
+  async function reprocess() {
+    if (!selectedEvent) return;
+    setIsSaving(true);
+    setActionMessage("");
+    try {
+      setSelectedEvent(await reprocessDLQEvent(selectedEvent.event_id));
+      await loadEvents();
+      setActionMessage("재처리 어댑터로 이벤트를 전송했습니다.");
+    } catch (requestError) {
+      setActionMessage(requestError instanceof Error ? requestError.message : "재처리를 실행하지 못했습니다.");
+    } finally { setIsSaving(false); }
+  }
+
   const pendingCount = events.filter((event) => event.approval_status === "pending").length;
   const holdCount = events.filter((event) => event.approval_status === "on_hold").length;
 
@@ -79,7 +93,7 @@ export default function SignalFlowDashboard() {
     <section className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6">{!loading && !selectedEvent && <p className="text-sm text-slate-400">검토할 사건을 선택해 주세요.</p>}{selectedEvent && <div><div className="flex flex-col gap-4 border-b border-slate-800 pb-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="mb-2 flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold text-cyan-300">{selectedEvent.event_id}</span><StatusBadge value={selectedEvent.approval_status} /><StatusBadge value={selectedEvent.validation_result.status} /></div><h2 className="text-xl font-bold text-white">{reasonLabel[selectedEvent.reason] ?? selectedEvent.reason}</h2><p className="mt-2 text-sm text-slate-400">{selectedEvent.error_message}</p></div><div className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3 text-right"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-300"><Bot className="h-4 w-4" />AI confidence</div><p className="mt-1 text-2xl font-bold text-white">{Math.round(selectedEvent.confidence * 100)}%</p></div></div>
     <div className="mt-6 grid gap-5 xl:grid-cols-2"><Panel title="원본 payload"><JsonBlock value={selectedEvent.raw_payload} /></Panel><Panel title="제안된 payload">{selectedEvent.corrected_payload ? <JsonBlock value={selectedEvent.corrected_payload} /> : <EmptyValue text="안전하게 생성할 수 있는 수정 payload가 없습니다." />}</Panel></div>
     <div className="mt-5 grid gap-5 xl:grid-cols-2"><Panel title="변경 diff">{selectedEvent.changes.length > 0 ? <div className="space-y-3">{selectedEvent.changes.map((change) => <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3" key={change.field}><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold text-cyan-300">{change.field}</span><span className="text-xs text-slate-500">{change.reason}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-xs"><ValueBlock label="BEFORE" value={change.before} tone="rose" /><ValueBlock label="AFTER" value={change.after} tone="emerald" /></div></div>)}</div> : <EmptyValue text="AI가 안전한 변경안을 제시하지 않았습니다." />}</Panel><Panel title="검증과 감사 로그"><div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-400">PYDANTIC VALIDATOR</span><StatusBadge value={selectedEvent.validation_result.status} /></div>{selectedEvent.validation_result.errors.length > 0 && <ul className="mt-3 space-y-1 text-xs text-rose-300">{selectedEvent.validation_result.errors.map((validationError) => <li key={validationError}>{validationError}</li>)}</ul>}</div><ol className="space-y-2">{selectedEvent.audit_logs.map((log, index) => <li className="flex gap-3 text-sm text-slate-400" key={`${log}-${index}`}><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />{log}</li>)}</ol></Panel></div>
-    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-200">운영자 결정</p><p className="mt-1 text-xs text-slate-500">검증을 통과해도 자동 재처리하지 않습니다.</p>{actionMessage && <p className="mt-2 text-xs text-cyan-300">{actionMessage}</p>}</div><div className="flex gap-2"><button className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving} onClick={() => void decide("hold")} type="button">보류</button><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving || selectedEvent.approval_status !== "pending"} onClick={() => void decide("approve")} type="button">재처리 승인</button></div></div>
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-200">운영자 결정</p><p className="mt-1 text-xs text-slate-500">검증을 통과해도 자동 재처리하지 않습니다.</p>{selectedEvent.reprocess_result && <p className="mt-1 text-xs text-emerald-300">{selectedEvent.reprocess_result.target} 전송 결과: {selectedEvent.reprocess_result.status}</p>}{actionMessage && <p className="mt-2 text-xs text-cyan-300">{actionMessage}</p>}</div><div className="flex gap-2"><button className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving || selectedEvent.approval_status === "reprocessed"} onClick={() => void decide("hold")} type="button">보류</button>{selectedEvent.approval_status === "approved" ? <button className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving} onClick={() => void reprocess()} type="button">재처리 실행</button> : <button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving || selectedEvent.approval_status !== "pending"} onClick={() => void decide("approve")} type="button">재처리 승인</button>}</div></div>
     </div>}</section></section>
   </div></main>;
 }
