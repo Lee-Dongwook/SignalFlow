@@ -69,3 +69,14 @@ Thumbs.db
 
 pl/*
 actions-runner/
+
+# ==========================================
+# Infra Action Plan
+# ==========================================
+
+infra/
+k8s/
+orchestration/
+docker-compose.yml
+docker-compose.test.yml
+.github/workflows/deploy.yml
