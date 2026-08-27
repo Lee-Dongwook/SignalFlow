@@ -55,3 +55,12 @@ def test_cannot_reprocess_event_that_was_not_approved():
     response = client.post("/api/v1/dlq/events/evt-value-002/reprocess")
 
     assert response.status_code == 409
+
+
+def test_analysis_requires_openai_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = client.post("/api/v1/dlq/events/evt-schema-001/analyze")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "OPENAI_API_KEY is not configured"

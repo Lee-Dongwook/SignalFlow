@@ -62,3 +62,9 @@ export function reprocessDLQEvent(eventId: string) {
     method: "POST",
   });
 }
+
+export function analyzeDLQEvent(eventId: string) {
+  return request<DLQEventDetail>(`/api/v1/dlq/events/${eventId}/analyze`, {
+    method: "POST",
+  });
+}

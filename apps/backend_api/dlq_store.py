@@ -11,6 +11,7 @@ SEED_EVENTS: list[dict[str, Any]] = [
             "content": "checkout completed",
             "timestamp": "1722470400000",
         },
+        "recovery_context": {"trusted_category": "checkout"},
         "reason": "schema_error",
         "confidence": 0.95,
         "changes": [

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -100,6 +101,34 @@ async def decide_dlq_event(event_id: str, payload: DLQDecisionRequest):
 
     updated_event = dlq_store.record_decision(event_id, payload.decision, payload.note)
     return updated_event
+
+
+@app.post("/api/v1/dlq/events/{event_id}/analyze")
+async def analyze_dlq_event(event_id: str):
+    event = dlq_store.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="DLQ event not found")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
+
+    from apps.dlq_healing_agent.src.graph import build_dlq_healing_graph
+
+    result = build_dlq_healing_graph().invoke(
+        {
+            "raw_payload": event["raw_payload"],
+            "error_message": event["error_message"],
+            "recovery_context": event.get("recovery_context", {}),
+            "logs": [],
+        }
+    )
+    event["reason"] = result["reason"]
+    event["confidence"] = result["confidence"]
+    event["changes"] = result["changes"]
+    event["corrected_payload"] = result.get("corrected_payload")
+    event["validation_result"] = result["validation_result"]
+    event["approval_status"] = result["approval_status"]
+    event["audit_logs"].extend(result["logs"])
+    return event
 
 
 @app.post("/api/v1/dlq/events/{event_id}/reprocess")
