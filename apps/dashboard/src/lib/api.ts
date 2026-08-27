@@ -1,31 +1,57 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
-export async function triggerHealAgent(eventId: string, targetAgent: string) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/agents/heal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event_id: eventId, target_agent: targetAgent }),
+export type DLQEventSummary = {
+  event_id: string;
+  error_message: string;
+  reason: string;
+  confidence: number;
+  validation_status: string;
+  approval_status: string;
+};
+
+type RecoveryChange = {
+  field: string;
+  before: unknown;
+  after: unknown;
+  reason: string;
+};
+
+export type DLQEventDetail = {
+  event_id: string;
+  error_message: string;
+  reason: string;
+  confidence: number;
+  approval_status: string;
+  raw_payload: unknown;
+  changes: RecoveryChange[];
+  corrected_payload: unknown | null;
+  validation_result: { status: string; errors: string[] };
+  audit_logs: string[];
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  if (!response.ok) throw new Error("Healing request failed");
-  return response.json();
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail || "API request failed");
+  }
+  return response.json() as Promise<T>;
 }
 
-export function subscribeMetricsStream(onData: (data: any) => void) {
-  const eventSource = new EventSource(`${API_BASE_URL}/api/v1/stream/metrics`);
+export function getDLQEvents() {
+  return request<DLQEventSummary[]>("/api/v1/dlq/events");
+}
 
-  eventSource.onmessage = (event) => {
-    try {
-      const parsedData = JSON.parse(event.data);
-      onData(parsedData);
-    } catch (err) {
-      console.error("SSE Parsing Error:", err);
-    }
-  };
+export function getDLQEvent(eventId: string) {
+  return request<DLQEventDetail>(`/api/v1/dlq/events/${eventId}`);
+}
 
-  eventSource.onerror = (err) => {
-    console.error("SSE Connection Error:", err);
-    eventSource.close();
-  };
-
-  return () => eventSource.close();
+export function decideDLQEvent(eventId: string, decision: "approve" | "hold") {
+  return request<DLQEventDetail>(`/api/v1/dlq/events/${eventId}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+  });
 }

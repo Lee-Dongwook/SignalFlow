@@ -1,271 +1,95 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Activity, Cpu, Database, Bot, CheckCircle2, Zap } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { subscribeMetricsStream, triggerHealAgent } from "@/lib/api";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, Bot, ChevronRight, Clock3, FileJson2, ShieldCheck, Zap } from "lucide-react";
 
-// Mock Real-time Chart Data
-const initialTrafficData = [
-  { time: "19:20", tps: 1250, latency: 12 },
-  { time: "19:21", tps: 1420, latency: 15 },
-  { time: "19:22", tps: 1890, latency: 18 },
-  { time: "19:23", tps: 2100, latency: 14 },
-  { time: "19:24", tps: 1950, latency: 11 },
-  { time: "19:25", tps: 2300, latency: 16 },
-];
+import { decideDLQEvent, getDLQEvent, getDLQEvents, type DLQEventDetail, type DLQEventSummary } from "@/lib/api";
+
+const reasonLabel: Record<string, string> = { schema_error: "스키마 오류", missing_required_value: "필수값 누락", unrecoverable: "복구 불가" };
+const statusStyle: Record<string, string> = {
+  pending: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  approved: "border-cyan-400/30 bg-cyan-400/10 text-cyan-300",
+  on_hold: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+  valid: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  not_applicable: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+};
+
+function StatusBadge({ value }: { value: string }) {
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusStyle[value] ?? statusStyle.on_hold}`}>{value.replaceAll("_", " ")}</span>;
+}
 
 export default function SignalFlowDashboard() {
-  const [traffic, setTraffic] = useState(initialTrafficData);
-  const [agentLogs, setAgentLogs] = useState([
-    {
-      id: "evt-9012",
-      type: "Schema Mismatch",
-      agent: "SchemaAgent",
-      status: "REPAIRED",
-      time: "19:25:02",
-    },
-    {
-      id: "evt-9011",
-      type: "Missing Field",
-      agent: "ValueAgent",
-      status: "REPAIRED",
-      time: "19:24:45",
-    },
-    {
-      id: "evt-9010",
-      type: "Null Category",
-      agent: "Supervisor",
-      status: "ROUTED",
-      time: "19:24:12",
-    },
-  ]);
+  const [events, setEvents] = useState<DLQEventSummary[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<DLQEventDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [metrics, setMetrics] = useState<any>(null);
-  const [healStatus, setHealStatus] = useState<string>("");
+  const loadEvents = useCallback(async () => {
+    const data = await getDLQEvents();
+    setEvents(data);
+    return data;
+  }, []);
 
-  // 실시간 트래픽 시뮬레이션
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const timeStr = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
-
-      setTraffic((prev) => [
-        ...prev.slice(1),
-        {
-          time: timeStr,
-          tps: Math.floor(1800 + Math.random() * 800),
-          latency: Math.floor(10 + Math.random() * 10),
-        },
-      ]);
-    }, 3000);
-
-    return () => clearInterval(interval);
+  const loadSelectedEvent = useCallback(async (eventId: string) => {
+    setSelectedEvent(await getDLQEvent(eventId));
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeMetricsStream((data) => {
-      setMetrics(data);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleManualHeal = async (eventId: string) => {
-    try {
-      setHealStatus("Processing...");
-      const res = await triggerHealAgent(eventId, "SchemaAgent");
-      setHealStatus(`Success: ${res.status || "Healed"}`);
-    } catch (err) {
-      setHealStatus("Failed to heal event");
+    async function initialize() {
+      try {
+        const data = await loadEvents();
+        if (data[0]) await loadSelectedEvent(data[0].event_id);
+      } catch {
+        setError("DLQ 사건을 불러오지 못했습니다. 백엔드 연결을 확인해 주세요.");
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+    void initialize();
+  }, [loadEvents, loadSelectedEvent]);
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans">
-      {/* Header */}
-      <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-wider text-cyan-400 flex items-center gap-2">
-            <Zap className="h-6 w-6 text-cyan-400" /> SIGNALFLOW PLATFORM
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Real-time Stream Intelligence & Self-Healing Pipeline Monitoring
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="flex h-3 w-3 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-          </span>
-          <span className="text-xs font-mono text-emerald-400 border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 rounded">
-            SYSTEM HEALTHY (P99 14ms)
-          </span>
-        </div>
-      </header>
+  async function selectEvent(eventId: string) {
+    setActionMessage("");
+    try { await loadSelectedEvent(eventId); } catch { setError("사건 상세 정보를 불러오지 못했습니다."); }
+  }
 
-      {/* Metric Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <div className="flex justify-between items-center text-slate-400 mb-2">
-            <span className="text-xs font-semibold">THROUGHPUT (TPS)</span>
-            <Activity className="h-4 w-4 text-cyan-400" />
-          </div>
-          <div className="text-2xl font-bold text-white font-mono">
-            2,340 <span className="text-xs text-slate-500">req/s</span>
-          </div>
-        </div>
+  async function decide(decision: "approve" | "hold") {
+    if (!selectedEvent) return;
+    setIsSaving(true);
+    setActionMessage("");
+    try {
+      setSelectedEvent(await decideDLQEvent(selectedEvent.event_id, decision));
+      await loadEvents();
+      setActionMessage(decision === "approve" ? "승인 결정이 감사 로그에 기록되었습니다." : "보류 결정이 감사 로그에 기록되었습니다.");
+    } catch (requestError) {
+      setActionMessage(requestError instanceof Error ? requestError.message : "결정을 저장하지 못했습니다.");
+    } finally { setIsSaving(false); }
+  }
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <div className="flex justify-between items-center text-slate-400 mb-2">
-            <span className="text-xs font-semibold">CLICKHOUSE LATENCY</span>
-            <Cpu className="h-4 w-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
-            8.2 <span className="text-xs text-slate-500">ms</span>
-          </div>
-        </div>
+  const pendingCount = events.filter((event) => event.approval_status === "pending").length;
+  const holdCount = events.filter((event) => event.approval_status === "on_hold").length;
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <div className="flex justify-between items-center text-slate-400 mb-2">
-            <span className="text-xs font-semibold">AGENT SELF-HEALED</span>
-            <Bot className="h-4 w-4 text-purple-400" />
-          </div>
-          <div className="text-2xl font-bold text-purple-400 font-mono">
-            99.4 <span className="text-xs text-slate-500">%</span>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <div className="flex justify-between items-center text-slate-400 mb-2">
-            <span className="text-xs font-semibold">ICEBERG LAKEHOUSE</span>
-            <Database className="h-4 w-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-bold text-white font-mono">
-            1.2 <span className="text-xs text-slate-500">TB (Compacted)</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Real-time Traffic Chart */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-xl">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-cyan-400" /> Real-time Pipeline
-            Throughput & Serving Latency
-          </h2>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={traffic}>
-                <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#0f172a",
-                    borderColor: "#334155",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="tps"
-                  stroke="#22d3ee"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="latency"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Multi-Agent DLQ Self-Healing Feed */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl flex flex-col justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-              <Bot className="h-4 w-4 text-purple-400" /> Multi-Agent DLQ
-              Self-Healing Log
-            </h2>
-            <div className="space-y-3">
-              {agentLogs.map((log, index) => (
-                <div
-                  key={index}
-                  className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex justify-between items-center text-xs"
-                >
-                  <div>
-                    <div className="font-mono text-cyan-400 font-medium">
-                      {log.id}
-                    </div>
-                    <div className="text-slate-400 mt-0.5">
-                      {log.type} →{" "}
-                      <span className="text-purple-300">{log.agent}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 font-mono">
-                      <CheckCircle2 className="h-3 w-3" /> {log.status}
-                    </span>
-                    <div className="text-slate-500 text-[10px] mt-1">
-                      {log.time}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-800 text-center">
-            <button className="text-xs text-purple-400 hover:text-purple-300 font-medium transition-colors">
-              View LangGraph Execution Graph →
-            </button>
-          </div>
-        </div>
-      </div>
-      {/* SSE 실시간 지표 표시 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="p-4 bg-slate-100 rounded">
-          <p className="text-sm text-gray-500">TPS</p>
-          <p className="text-xl font-bold">{metrics?.tps ?? 0}</p>
-        </div>
-        <div className="p-4 bg-slate-100 rounded">
-          <p className="text-sm text-gray-500">DLQ Count</p>
-          <p className="text-xl font-bold text-red-500">
-            {metrics?.dlq_count ?? 0}
-          </p>
-        </div>
-        <div className="p-4 bg-slate-100 rounded">
-          <p className="text-sm text-gray-500">Circuit Breaker</p>
-          <p className="text-xl font-bold">
-            {metrics?.circuit_breaker_open ? "OPEN" : "CLOSED"}
-          </p>
-        </div>
-      </div>
-
-      {/* 수동 수리 제어 영역 */}
-      <div className="p-4 border rounded">
-        <h2 className="font-semibold mb-2">Self-Healing Control</h2>
-        <button
-          type="button"
-          onClick={() => handleManualHeal("evt-9012")}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Trigger Heal (evt-9012)
-        </button>
-        {healStatus && (
-          <p className="mt-2 text-sm text-gray-600">{healStatus}</p>
-        )}
-      </div>
-    </div>
-  );
+  return <main className="min-h-screen bg-slate-950 px-5 py-6 text-slate-100 sm:px-8"><div className="mx-auto max-w-7xl">
+    <header className="mb-8 flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 flex items-center gap-2 text-cyan-300"><Zap className="h-5 w-5" /><span className="text-xs font-bold tracking-[0.24em]">SIGNALFLOW</span></div><h1 className="text-3xl font-bold tracking-tight text-white">DLQ Recovery Copilot</h1><p className="mt-2 max-w-2xl text-sm text-slate-400">AI 복구 제안을 검증하고, 운영자가 승인 또는 보류를 결정하는 안전한 이벤트 복구 검토 화면입니다.</p></div><div className="flex items-center gap-2 text-sm text-emerald-300"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />Review workspace ready</div></header>
+    <section className="mb-6 grid gap-4 sm:grid-cols-3"><MetricCard label="검토 대상" value={String(events.length)} icon={<FileJson2 className="h-5 w-5" />} /><MetricCard label="승인 대기" value={String(pendingCount)} icon={<Clock3 className="h-5 w-5" />} tone="amber" /><MetricCard label="보류 / 격리" value={String(holdCount)} icon={<ShieldCheck className="h-5 w-5" />} tone="rose" /></section>
+    {error && <div className="mb-6 flex items-center gap-3 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200"><AlertTriangle className="h-5 w-5 shrink-0" />{error}</div>}
+    <section className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]"><aside className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4"><div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold text-slate-200">DLQ 사건</h2><span className="text-xs text-slate-500">{events.length} events</span></div><div className="space-y-2">{loading && <p className="p-3 text-sm text-slate-400">사건을 불러오는 중입니다.</p>}{events.map((event) => <button className={`w-full rounded-xl border p-3 text-left transition ${selectedEvent?.event_id === event.event_id ? "border-cyan-400/60 bg-cyan-400/10" : "border-slate-800 bg-slate-950/40 hover:border-slate-600"}`} key={event.event_id} onClick={() => void selectEvent(event.event_id)} type="button"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-xs font-semibold text-cyan-300">{event.event_id}</p><p className="mt-1 text-sm font-medium text-slate-200">{reasonLabel[event.reason] ?? event.reason}</p></div><ChevronRight className="h-4 w-4 text-slate-500" /></div><p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{event.error_message}</p><div className="mt-3 flex items-center justify-between"><span className="text-xs text-slate-400">신뢰도 {Math.round(event.confidence * 100)}%</span><StatusBadge value={event.approval_status} /></div></button>)}</div></aside>
+    <section className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6">{!loading && !selectedEvent && <p className="text-sm text-slate-400">검토할 사건을 선택해 주세요.</p>}{selectedEvent && <div><div className="flex flex-col gap-4 border-b border-slate-800 pb-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="mb-2 flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold text-cyan-300">{selectedEvent.event_id}</span><StatusBadge value={selectedEvent.approval_status} /><StatusBadge value={selectedEvent.validation_result.status} /></div><h2 className="text-xl font-bold text-white">{reasonLabel[selectedEvent.reason] ?? selectedEvent.reason}</h2><p className="mt-2 text-sm text-slate-400">{selectedEvent.error_message}</p></div><div className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3 text-right"><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-300"><Bot className="h-4 w-4" />AI confidence</div><p className="mt-1 text-2xl font-bold text-white">{Math.round(selectedEvent.confidence * 100)}%</p></div></div>
+    <div className="mt-6 grid gap-5 xl:grid-cols-2"><Panel title="원본 payload"><JsonBlock value={selectedEvent.raw_payload} /></Panel><Panel title="제안된 payload">{selectedEvent.corrected_payload ? <JsonBlock value={selectedEvent.corrected_payload} /> : <EmptyValue text="안전하게 생성할 수 있는 수정 payload가 없습니다." />}</Panel></div>
+    <div className="mt-5 grid gap-5 xl:grid-cols-2"><Panel title="변경 diff">{selectedEvent.changes.length > 0 ? <div className="space-y-3">{selectedEvent.changes.map((change) => <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3" key={change.field}><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold text-cyan-300">{change.field}</span><span className="text-xs text-slate-500">{change.reason}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-xs"><ValueBlock label="BEFORE" value={change.before} tone="rose" /><ValueBlock label="AFTER" value={change.after} tone="emerald" /></div></div>)}</div> : <EmptyValue text="AI가 안전한 변경안을 제시하지 않았습니다." />}</Panel><Panel title="검증과 감사 로그"><div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/50 p-3"><div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-400">PYDANTIC VALIDATOR</span><StatusBadge value={selectedEvent.validation_result.status} /></div>{selectedEvent.validation_result.errors.length > 0 && <ul className="mt-3 space-y-1 text-xs text-rose-300">{selectedEvent.validation_result.errors.map((validationError) => <li key={validationError}>{validationError}</li>)}</ul>}</div><ol className="space-y-2">{selectedEvent.audit_logs.map((log, index) => <li className="flex gap-3 text-sm text-slate-400" key={`${log}-${index}`}><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />{log}</li>)}</ol></Panel></div>
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-200">운영자 결정</p><p className="mt-1 text-xs text-slate-500">검증을 통과해도 자동 재처리하지 않습니다.</p>{actionMessage && <p className="mt-2 text-xs text-cyan-300">{actionMessage}</p>}</div><div className="flex gap-2"><button className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving} onClick={() => void decide("hold")} type="button">보류</button><button className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40" disabled={isSaving || selectedEvent.approval_status !== "pending"} onClick={() => void decide("approve")} type="button">재처리 승인</button></div></div>
+    </div>}</section></section>
+  </div></main>;
 }
+
+function MetricCard({ label, value, icon, tone = "cyan" }: { label: string; value: string; icon: ReactNode; tone?: "cyan" | "amber" | "rose" }) {
+  const toneClass = { cyan: "text-cyan-300", amber: "text-amber-300", rose: "text-rose-300" }[tone];
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4"><div className={`flex items-center justify-between ${toneClass}`}><span className="text-xs font-semibold uppercase tracking-wide">{label}</span>{icon}</div><p className="mt-4 text-3xl font-bold text-white">{value}</p></div>;
+}
+
+function Panel({ title, children }: { title: string; children: ReactNode }) { return <div className="rounded-2xl border border-slate-800 bg-slate-950/30 p-4"><h3 className="mb-3 text-sm font-semibold text-slate-200">{title}</h3>{children}</div>; }
+function JsonBlock({ value }: { value: unknown }) { return <pre className="max-h-64 overflow-auto rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(value, null, 2)}</pre>; }
+function EmptyValue({ text }: { text: string }) { return <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">{text}</p>; }
+function ValueBlock({ label, value, tone }: { label: string; value: unknown; tone: "rose" | "emerald" }) { const toneClass = tone === "rose" ? "border-rose-400/20 bg-rose-400/5 text-rose-200" : "border-emerald-400/20 bg-emerald-400/5 text-emerald-200"; return <div className={`rounded-lg border p-2 ${toneClass}`}><p className="text-[10px] font-semibold tracking-wide opacity-60">{label}</p><p className="mt-1 break-all font-mono">{String(value ?? "null")}</p></div>; }
