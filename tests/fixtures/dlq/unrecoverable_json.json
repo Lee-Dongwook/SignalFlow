@@ -1,0 +1,15 @@
+{
+  "event_id": "evt-json-003",
+  "error_message": "invalid JSON: unexpected end of input",
+  "raw_payload": "{\"event_id\": \"evt-json-003\", \"source\":",
+  "proposal": {
+    "reason": "unrecoverable",
+    "rationale": "The payload cannot be parsed and the missing fields cannot be reconstructed safely.",
+    "confidence": 1.0,
+    "recoverable": false,
+    "corrected_payload": null,
+    "changes": [],
+    "risk_reason": "The raw payload must be retained for manual investigation."
+  },
+  "expected_validation_status": "not_applicable"
+}

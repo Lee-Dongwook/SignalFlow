@@ -1,0 +1,21 @@
+{
+  "event_id": "evt-value-002",
+  "error_message": "content is required and may not be empty",
+  "raw_payload": {
+    "event_id": "evt-value-002",
+    "source": "web",
+    "category": "support",
+    "content": "",
+    "timestamp": 1722470400000
+  },
+  "proposal": {
+    "reason": "missing_required_value",
+    "rationale": "The original event has no content, so a safe value cannot be derived.",
+    "confidence": 0.99,
+    "recoverable": false,
+    "corrected_payload": null,
+    "changes": [],
+    "risk_reason": "Generating event content would invent facts not present in the original event."
+  },
+  "expected_validation_status": "not_applicable"
+}

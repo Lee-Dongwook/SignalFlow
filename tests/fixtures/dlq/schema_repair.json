@@ -1,0 +1,42 @@
+{
+  "event_id": "evt-schema-001",
+  "error_message": "timestamp must be an integer and category is required",
+  "raw_payload": {
+    "event_id": "evt-schema-001",
+    "source": "mobile-app",
+    "content": "checkout completed",
+    "timestamp": "1722470400000"
+  },
+  "recovery_context": {
+    "trusted_category": "checkout"
+  },
+  "proposal": {
+    "reason": "schema_error",
+    "rationale": "timestamp can be converted to an integer, and category is known from the DLQ context.",
+    "confidence": 0.95,
+    "recoverable": true,
+    "corrected_payload": {
+      "event_id": "evt-schema-001",
+      "source": "mobile-app",
+      "category": "checkout",
+      "content": "checkout completed",
+      "timestamp": 1722470400000
+    },
+    "changes": [
+      {
+        "field": "timestamp",
+        "before": "1722470400000",
+        "after": 1722470400000,
+        "reason": "numeric string conversion"
+      },
+      {
+        "field": "category",
+        "before": null,
+        "after": "checkout",
+        "reason": "category supplied by the fixture context"
+      }
+    ],
+    "risk_reason": "The inferred category must be reviewed by an operator before replay."
+  },
+  "expected_validation_status": "valid"
+}
