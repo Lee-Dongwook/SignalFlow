@@ -9,7 +9,7 @@ SignalFlow는 Kafka로 유입된 Protobuf 이벤트를 Flink로 처리합니다.
 ### 핵심 기능
 
 - **실시간 이벤트 처리**: Kafka → PyFlink 스트림에서 Protobuf 이벤트를 파싱하고 데이터 품질을 평가합니다.
-- **품질 격리 및 복구**: 문제 이벤트를 DLQ로 분기하고, 재시도 및 서킷 브레이커를 갖춘 복구 에이전트가 처리합니다.
+- **안전한 DLQ 복구 검토**: AI가 오류 원인, 수정안, 변경 diff, 신뢰도를 구조화해 제안하고 Pydantic 검증과 운영자 승인을 거쳐 처리합니다.
 - **다중 저장소 서빙**: 벡터·메타데이터는 ClickHouse, 엔터티 관계는 Neo4j로 전달합니다.
 - **검색 파이프라인**: ClickHouse 하이브리드 검색, 리랭킹, Neo4j 그래프 컨텍스트를 결합합니다.
 - **운영 화면/API**: FastAPI의 상태·SSE 메트릭·복구 API와 Next.js 대시보드를 제공합니다.
@@ -33,7 +33,7 @@ ClickHouse Vector Sink + Neo4j Graph Sink        ▼
                                                   │
                                                   └── raw-telemetry-stream 재투입
 
-FastAPI Control API ── SSE 메트릭 / 복구 요청 ── Next.js Dashboard
+FastAPI Control API ── SSE 메트릭 / DLQ 검토·승인 ── Next.js Dashboard
 ```
 
 ## 기술 스택
@@ -124,9 +124,27 @@ curl -N http://localhost:8001/api/v1/stream/metrics
 curl -X POST http://localhost:8001/api/v1/agents/heal \
   -H 'Content-Type: application/json' \
   -d '{"event_id":"evt-9012","target_agent":"SchemaAgent"}'
+
+curl http://localhost:8001/api/v1/dlq/events
+curl http://localhost:8001/api/v1/dlq/events/evt-schema-001
+curl -X POST http://localhost:8001/api/v1/dlq/events/evt-schema-001/decision \
+  -H 'Content-Type: application/json' \
+  -d '{"decision":"approve"}'
 ```
 
-`/health`는 서비스 상태를, `/api/v1/stream/metrics`는 1초 간격의 SSE 메트릭을, `/api/v1/agents/heal`은 복구 요청 결과를 반환합니다.
+`/health`는 서비스 상태를, `/api/v1/stream/metrics`는 1초 간격의 SSE 메트릭을 반환합니다. `/api/v1/dlq/events`는 검토 대상 목록·상세를 제공하고, `decision` API는 승인 또는 보류 결정을 감사 로그에 남깁니다. 현재 DLQ API는 데모 fixture를 메모리에 보관하며, Kafka 재투입은 승인 이력과 분리된 다음 확장 단계입니다.
+
+### DLQ 복구 안전 흐름
+
+DLQ 복구 판단은 다음 단계로 처리합니다.
+
+```text
+오류 이벤트 → 구조화된 원인 분류 → 수정 제안과 diff → Pydantic 검증 → 운영자 승인 또는 보류
+```
+
+- `schema_error`이고 검증을 통과한 제안만 `pending` 승인 대기 상태가 됩니다.
+- 필수 비즈니스 값이 누락됐거나 JSON을 안전하게 복원할 수 없는 이벤트는 `on_hold`로 격리합니다.
+- LLM이 제안한 결과는 서버의 이벤트 스키마 검증을 반드시 통과해야 하며, 검증 통과만으로 자동 재처리하지 않습니다.
 
 ### 5. 대시보드 실행
 
