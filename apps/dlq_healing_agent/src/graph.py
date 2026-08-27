@@ -23,7 +23,7 @@ def build_dlq_healing_graph():
         route_next,
         {
             "schema_agent": "schema_agent",
-            "FINISH": END
+            "FINISH": "validator",
         }
     )
     workflow.add_edge("schema_agent", "validator")
