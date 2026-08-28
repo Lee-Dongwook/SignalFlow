@@ -1,6 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 
+from ..llm import build_chat_model
 from ..models import FailureReason, RecoveryProposal
 from ..state import DLQHealingState
 
@@ -17,7 +17,7 @@ Every proposed change must be listed with its before value, after value, and rea
 
 
 def build_supervisor_chain():
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = build_chat_model()
     return supervisor_prompt | llm.with_structured_output(RecoveryProposal)
 
 

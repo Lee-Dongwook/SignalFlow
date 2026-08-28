@@ -151,8 +151,18 @@ async def analyze_dlq_event(event_id: str):
     event = dlq_store.get_event(event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="DLQ event not found")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
+    from apps.dlq_healing_agent.src.llm import get_llm_settings, is_llm_configured
+
+    try:
+        settings = get_llm_settings()
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    if not is_llm_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="OPENAI_API_KEY is not configured",
+        )
 
     from apps.dlq_healing_agent.src.graph import build_dlq_healing_graph
 
@@ -182,6 +192,9 @@ async def analyze_dlq_event(event_id: str):
     event["rationale"] = proposal.get("rationale", "")
     event["risk_reason"] = proposal.get("risk_reason", "")
     event["audit_logs"].extend(result["logs"])
+    event["audit_logs"].append(
+        f"AI analysis completed with {settings.provider} model {settings.model}."
+    )
     return dlq_store.record_analysis(event)
 
 

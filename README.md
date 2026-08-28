@@ -82,7 +82,15 @@ FastAPI Control API ── SSE 메트릭 / DLQ 검토·승인 ── Next.js Das
 cp .env.example .env
 ```
 
-최소한 `KAFKA_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`, `MINIO_CONSOLE_PORT`, `CLICKHOUSE_PORT`, `ELASTICSEARCH_PORT`, `GRAFANA_PORT`를 설정해야 기본 Compose 구성이 시작됩니다. LLM 기반 복구 분석을 실행할 때만 서버 환경변수 `OPENAI_API_KEY`가 필요합니다. 키가 없어도 fixture 기반 DLQ 검토·승인·재처리 시뮬레이션은 동작합니다.
+최소한 `KAFKA_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`, `MINIO_CONSOLE_PORT`, `CLICKHOUSE_PORT`, `ELASTICSEARCH_PORT`, `GRAFANA_PORT`를 설정해야 기본 Compose 구성이 시작됩니다. 키가 없어도 fixture 기반 DLQ 검토·승인·재처리 시뮬레이션은 동작합니다.
+
+LLM 기반 복구 분석은 기본적으로 OpenAI를 사용하며 `OPENAI_API_KEY`가 필요합니다. 비용 없이 로컬에서 시험하려면 Ollama를 실행한 뒤 다음 값을 설정합니다. 이 설정은 분석 요청이 Ollama로 가도록 바꾸며, OpenAI 키는 필요하지 않습니다.
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=qwen2.5:3b
+OLLAMA_BASE_URL=http://localhost:11434
+```
 
 ### 3. 인프라 시작
 
@@ -193,7 +201,11 @@ docker run -p 3000:3000 signalflow-dashboard
 | `PORT`                       | 양쪽     | PaaS가 주입하는 포트. 없으면 8001 / 3000을 사용합니다.                   |
 | `SIGNALFLOW_ALLOWED_ORIGINS` | 백엔드   | 쉼표로 구분한 CORS 허용 도메인. 기본값 `*`은 데모 전용입니다.            |
 | `SIGNALFLOW_DB_PATH`         | 백엔드   | 검토 상태 SQLite 경로. 컨테이너 기본값은 `/app/data/signalflow.db`입니다. |
-| `OPENAI_API_KEY`             | 백엔드   | `analyze` API에만 필요합니다. 없으면 해당 API만 503을 반환합니다.        |
+| `LLM_PROVIDER`               | 백엔드   | `openai`(기본) 또는 로컬 Ollama용 `ollama`입니다.                         |
+| `OPENAI_API_KEY`             | 백엔드   | `LLM_PROVIDER=openai`일 때 `analyze` API에 필요합니다.                    |
+| `OPENAI_MODEL`               | 백엔드   | OpenAI 모델입니다. 기본값은 `gpt-4o-mini`입니다.                          |
+| `OLLAMA_BASE_URL`            | 백엔드   | Ollama 주소입니다. 기본값은 `http://localhost:11434`입니다.               |
+| `OLLAMA_MODEL`               | 백엔드   | Ollama 모델입니다. 기본값은 `qwen2.5:3b`입니다.                           |
 | `NEXT_PUBLIC_API_URL`        | 대시보드 | 빌드 시점에 번들에 포함되므로 반드시 빌드 인자로 전달합니다.             |
 
 배포 후 확인할 것

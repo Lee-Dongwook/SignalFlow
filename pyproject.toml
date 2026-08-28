@@ -19,6 +19,7 @@ dependencies = [
     "kafka-python>=2.0.2,<3.0.0",
     "langchain>=0.3.0,<0.4.0",
     "langchain-openai>=0.3.0,<0.4.0",
+    "langchain-ollama>=0.2.0,<0.4.0",
     "langgraph>=0.3.0,<0.4.0",
     "neo4j>=5.18.0",
     "opentelemetry-api==1.24.0",
