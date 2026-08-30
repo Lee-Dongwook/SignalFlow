@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: signalflow-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./apps/backend_api/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: SIGNALFLOW_ALLOWED_ORIGINS
+        sync: false

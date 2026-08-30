@@ -15,6 +15,51 @@ SignalFlow는 이 **DLQ 이후의 복구 공백**에 집중합니다. 복구 에
 | 자동화와 안전성 사이의 충돌                       | 운영자 승인·보류·감사 로그를 복구 흐름에 포함   | 자동화 보조와 최종 통제권을 함께 확보        |
 | 복구 불가 이벤트가 후속 처리 없이 방치            | 필수 값 누락·안전 복원 불가 건을 격리           | 위험 이벤트를 정상 스트림과 분리해 추적      |
 
+## 무료 배포 구성
+
+현재 제출용 배포는 LLM 연결과 전체 스트리밍 인프라 없이도 검토 흐름을 보여줄 수 있도록 구성합니다. 프론트엔드는 Vercel, 백엔드는 Render Free에 각각 배포합니다. 백엔드는 준비된 fixture 3건을 제공하므로 별도의 Kafka·ClickHouse·Neo4j 연결이나 API 키가 필요하지 않습니다.
+
+```text
+Vercel (Next.js Dashboard)
+        │  NEXT_PUBLIC_API_URL
+        ▼
+Render Free (FastAPI DLQ Review API)
+        │
+        └── SQLite + fixture 3건
+```
+
+### 1. 배포 전 준비
+
+1. 이 저장소를 GitHub에 올립니다. `.env`와 API 키는 올리지 않습니다.
+2. Render와 Vercel 계정을 GitHub 저장소에 연결합니다.
+3. 먼저 백엔드를 배포해 Render 주소를 만든 뒤, 그 주소를 프론트엔드 환경 변수에 입력합니다.
+
+### 2. 백엔드 배포 — Render Free
+
+저장소 루트의 [`render.yaml`](render.yaml)가 백엔드 Dockerfile, 무료 요금제, `/health` 헬스 체크를 정의합니다.
+
+1. Render에서 **New → Blueprint**를 선택하고 GitHub 저장소를 연결합니다.
+2. 생성되는 `signalflow-api` 서비스를 확인한 뒤 `SIGNALFLOW_ALLOWED_ORIGINS`에 Vercel 프론트엔드 주소를 입력합니다. 아직 프론트엔드 주소가 없다면 임시로 `*`를 사용하고, 프론트엔드 배포 뒤 실제 주소로 교체합니다.
+3. 배포 완료 후 `https://<render-서비스-주소>/health`가 `200`을 반환하는지 확인합니다.
+
+Render Free 서비스는 15분간 요청이 없으면 절전 상태가 되며, 첫 요청에서 약 1분의 기동 시간이 생길 수 있습니다. 또한 로컬 SQLite 파일은 재시작·재배포·절전 후 사라집니다. 따라서 이 배포는 데모용 fixture와 현재 접속 중의 승인·보류 흐름을 보여주는 용도로 사용합니다.
+
+### 3. 프론트엔드 배포 — Vercel
+
+1. Vercel에서 **Add New → Project**를 선택하고 같은 GitHub 저장소를 가져옵니다.
+2. **Root Directory**를 `apps/dashboard`로 지정합니다. Framework는 Next.js를 사용합니다.
+3. 아래 환경 변수를 **Production**에 등록합니다.
+
+| 변수                               | 값                             |
+| ---------------------------------- | ------------------------------ |
+| `NEXT_PUBLIC_API_URL`              | `https://<render-서비스-주소>` |
+| `NEXT_PUBLIC_LLM_ANALYSIS_ENABLED` | `false`                        |
+
+4. 배포 후 Vercel 주소를 Render의 `SIGNALFLOW_ALLOWED_ORIGINS` 값에 반영하고 백엔드를 다시 배포합니다.
+5. 대시보드에서 사건 3건이 표시되고, `승인`·`보류`·`재처리` 동작이 성공하는지 확인합니다.
+
+LLM 연결 전에는 AI 분석 버튼을 숨기고, 이미 검증된 fixture의 복구 제안과 운영자 승인 흐름을 보여줍니다. 나중에 LLM을 연결할 때는 백엔드에 `OPENAI_API_KEY` 등 필요한 비밀값을 등록하고, Vercel의 `NEXT_PUBLIC_LLM_ANALYSIS_ENABLED`만 `true`로 바꾼 뒤 프론트엔드를 재배포하면 됩니다.
+
 ## 프로젝트 소개
 
 SignalFlow는 Kafka로 유입된 Protobuf 이벤트를 Flink로 처리합니다. 처리 과정에서 데이터 품질을 검사하고, 임베딩 및 그래프 정보를 ClickHouse와 Neo4j에 적재합니다. 오류 이벤트는 DLQ에서 분리한 뒤 복구 에이전트의 분석·검증·운영자 승인 흐름을 거쳐 재처리합니다. FastAPI 제어 API와 Next.js 대시보드는 파이프라인 상태를 확인하는 데 사용합니다.
