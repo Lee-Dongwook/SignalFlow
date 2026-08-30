@@ -247,13 +247,7 @@ pnpm dev
 4. 승인
 5. 재처리 완료
 
-| 단계 | 화면 |
-| --- | --- |
-| 1. 사건 감지 | ![데모 1단계 - 사건 감지](img/demo-step-1-detection.png) |
-| 2. AI 복구안 생성 | ![데모 2단계 - AI 복구안 생성](img/demo-step-2-ai-recovery.png) |
-| 3. 스키마 검증 | ![데모 3단계 - 스키마 검증](img/demo-step-3-schema-validation.png) |
-| 4. 승인 | ![데모 4단계 - 승인](img/demo-step-4-approval.png) |
-| 5. 재처리 완료 | ![데모 5단계 - 재처리 완료](img/demo-step-5-reprocessed.png) |
+![DLQ 복구 자동 데모 — 감지부터 재처리 완료까지](img/demo-flow.gif)
 
 데모 완료 화면에는 `orders.normalized` 전송 성공 결과와 감사 로그가 표시됩니다. 이는 프론트엔드에서 재현한 예시 결과입니다.
 
